@@ -1,13 +1,18 @@
 # Active Inference & Predictive-Coding Control for Grounded LLM Multi-Agent Orchestration
 
-Research/thesis plan. Status: **Stage 1 complete.** Stage 0.5 kill-test
-done (positive result, §4a). Stage 1's EFE control node, LangGraph wiring
-(incl. the `escalate_to_human` → `interrupt()` pause), and the real
-tool-calling LLM agent step (Stage 1c, `src/aif_orchestrator/llm_agent.py`)
-are all built and verified end-to-end — see
-[`context/HANDOFF.md`](context/HANDOFF.md) and
-[`context/TODOS.md`](context/TODOS.md) for exactly what's done and what's
-next (OPA `policy_gate` wiring, then Stage 2 baselines).
+Research/thesis plan. Status: **Stage 1 and Stage 2 complete.** Stage
+0.5 kill-test done (positive result, §4a). Stage 1's EFE control node,
+LangGraph wiring (incl. the `escalate_to_human` → `interrupt()` pause),
+and the real tool-calling LLM agent step (Stage 1c,
+`src/aif_orchestrator/llm_agent.py`) are built and verified end-to-end.
+Stage 2's four baselines (heuristic/learned_router/VOI/ReAct,
+`src/aif_orchestrator/baselines/`) are ported to the real decision-POMDP
+and pluggable into the same LangGraph scaffold — see
+[`docs/stage2-baselines-results.md`](docs/stage2-baselines-results.md)
+for results and an important caveat on what this comparison does and
+doesn't establish. See [`context/HANDOFF.md`](context/HANDOFF.md) and
+[`context/TODOS.md`](context/TODOS.md) for exactly what's done and
+what's next (OPA `policy_gate` wiring, then Stage 3).
 
 ## 1. Thesis statement
 
@@ -220,11 +225,25 @@ not about who has more information.
   epistemic/pragmatic logs) still pending Stage 2/3 — this stage proved
   the control-loop plumbing works with a real LLM, not benchmark results.
 
-### Stage 2 — Baselines (weeks 5–7, parallel with Stage 1 tail)
-- Implement heuristic-threshold, learned-router, and ReAct baselines against
-  the identical LangGraph scaffold and identical observation features.
-- Deliverable: all four conditions runnable via one CLI flag on a small task
-  subset.
+### Stage 2 — Baselines (weeks 5–7, parallel with Stage 1 tail) — complete
+
+- [x] Heuristic-threshold, learned-router (belief-state-parity fix
+  applied), VOI/decision-theoretic, and ReAct baselines implemented
+  against the real decision-POMDP — `src/aif_orchestrator/baselines/`.
+  All four share the EFE control node's interface and are genuinely
+  pluggable into the identical LangGraph scaffold
+  (`graph.build_graph(control_step=...)`, `graph.run_stage2_demo()`),
+  verified including the real `interrupt()` pause.
+- [x] Deliverable met: all five conditions (incl. EFE) runnable via CLI
+  (`python -m aif_orchestrator.graph --stage2` for the LangGraph-wired
+  demo; `python -m aif_orchestrator.baselines.run_stage2_eval` for the
+  3000-episode statistical comparison) — results and an important
+  caveat on what this comparison does and doesn't establish (it's not a
+  repeat of Stage 0.5's model-matched Bayes-optimality test) in
+  [`docs/stage2-baselines-results.md`](docs/stage2-baselines-results.md).
+- VOI's implementation diverges from this section's original sketch
+  ("LLM-estimated P(success|context)") — see `context/TODOS.md` for why
+  and what would still motivate building that version at Stage 3.
 
 ### Stage 3 — Primary evaluation (weeks 8–12)
 - Run all four conditions on τ²-bench (retail, airline, telecom) and
@@ -284,9 +303,9 @@ plan still holds as of September 2026.
 
 ## 7. Next action
 
-Stage 0, Stage 0.5, and Stage 1 (including the real tool-calling LLM
-agent step, Stage 1c) are all complete. Next: wire a real OPA instance
-for the `policy_gate` observation (currently hardcoded `allow`), then
-start Stage 2 baselines (heuristic, learned router with belief-state
-parity, VOI/decision-theoretic, ReAct) against the same LangGraph
-scaffold.
+Stage 0 through Stage 2 are all complete (Stage 1c's real LLM agent
+step; Stage 2's four baselines against the real decision-POMDP). Next:
+wire a real OPA instance for the `policy_gate` observation (currently
+hardcoded `allow`), then start Stage 3 (real τ²-bench/HiL-Bench
+integration — the first stage that needs external benchmark repos and a
+real API budget, not just the credentials already configured).

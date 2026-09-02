@@ -1,0 +1,65 @@
+{
+  "num_eval_episodes": 3000,
+  "results": {
+    "heuristic": {
+      "n_episodes": 3000,
+      "avg_reward": 2.5251333333333332,
+      "reward_ci95_halfwidth": 0.10032657224750884,
+      "n_forced_bad": 901,
+      "correct_escalation_rate": 1.0,
+      "unnecessary_escalation_rate": 0.0,
+      "normal_resolved_rate": 0.9923773225345403,
+      "forced_stop_rate": 0.005333333333333333,
+      "avg_steps": 1.9903333333333333,
+      "wall_time_sec": 0.12183213233947754
+    },
+    "learned_router": {
+      "n_episodes": 3000,
+      "avg_reward": 2.449533333333333,
+      "reward_ci95_halfwidth": 0.09808139725056857,
+      "n_forced_bad": 901,
+      "correct_escalation_rate": 1.0,
+      "unnecessary_escalation_rate": 0.0,
+      "normal_resolved_rate": 1.0,
+      "forced_stop_rate": 0.0,
+      "avg_steps": 1.909,
+      "wall_time_sec": 0.14585041999816895
+    },
+    "voi_decision_theoretic": {
+      "n_episodes": 3000,
+      "avg_reward": 1.8704333333333332,
+      "reward_ci95_halfwidth": 0.11878395256134228,
+      "n_forced_bad": 901,
+      "correct_escalation_rate": 1.0,
+      "unnecessary_escalation_rate": 0.0,
+      "normal_resolved_rate": 0.8423058599333015,
+      "forced_stop_rate": 0.11033333333333334,
+      "avg_steps": 3.43,
+      "wall_time_sec": 194.0309352874756
+    },
+    "react": {
+      "n_episodes": 3000,
+      "avg_reward": 1.8643999999999998,
+      "reward_ci95_halfwidth": 0.13608928765586056,
+      "n_forced_bad": 901,
+      "correct_escalation_rate": 0.0,
+      "unnecessary_escalation_rate": 0.0,
+      "normal_resolved_rate": 0.9923773225345403,
+      "forced_stop_rate": 0.30566666666666664,
+      "avg_steps": 3.191666666666667,
+      "wall_time_sec": 0.18233871459960938
+    },
+    "efe_active_inference": {
+      "n_episodes": 3000,
+      "avg_reward": 1.5635,
+      "reward_ci95_halfwidth": 0.09527325418330397,
+      "n_forced_bad": 901,
+      "correct_escalation_rate": 1.0,
+      "unnecessary_escalation_rate": 0.0,
+      "normal_resolved_rate": 0.6817532158170557,
+      "forced_stop_rate": 0.22266666666666668,
+      "avg_steps": 3.1286666666666667,
+      "wall_time_sec": 88.2715208530426
+    }
+  }
+}

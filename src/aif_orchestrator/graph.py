@@ -24,6 +24,7 @@ from .efe_controller import EFEControlNode, Observation, POLICIES
 
 RESULTS_DIR = Path(__file__).resolve().parent.parent.parent / "results"
 DECISION_LOG_PATH = RESULTS_DIR / "stage1_decision_log.jsonl"
+STAGE2_DECISION_LOG_PATH = RESULTS_DIR / "stage2_decision_log.jsonl"
 
 
 class OrchestratorState(TypedDict, total=False):
@@ -83,32 +84,45 @@ def llm_agent_step(state: OrchestratorState) -> OrchestratorState:
     return {"observation": observation, "messages": messages}
 
 
-def efe_control_step(state: OrchestratorState) -> OrchestratorState:
-    node = EFEControlNode(prior=list(state["belief"].values()) if state.get("belief") else None)
-    obs = Observation(**state["observation"])
-    decision = node.decide(obs)
+def make_control_step(control_node_cls=EFEControlNode, log_path=DECISION_LOG_PATH):
+    """Builds a control-step node for any controller sharing
+    EFEControlNode's interface (__init__(prior=None), decide(observation,
+    valid_policies=None) -> Decision) -- Stage 2 baselines
+    (src/aif_orchestrator/baselines/) plug in here the same way
+    llm_agent_step swaps in for mock_agent_step."""
 
-    record = {
-        "task_id": state["task_id"],
-        "turn": state["turn"],
-        "observation": state["observation"],
-        "chosen_policy": decision.policy,
-        "belief": decision.belief,
-        "action_marginals": decision.action_marginals,
-        "epistemic_value": decision.epistemic_value,
-        "pragmatic_value": decision.pragmatic_value,
-    }
-    trace = state.get("decision_trace", []) + [record]
+    def control_step(state: OrchestratorState) -> OrchestratorState:
+        node = control_node_cls(prior=list(state["belief"].values()) if state.get("belief") else None)
+        obs = Observation(**state["observation"])
+        decision = node.decide(obs)
 
-    RESULTS_DIR.mkdir(exist_ok=True)
-    with open(DECISION_LOG_PATH, "a") as f:
-        f.write(json.dumps(record) + "\n")
+        record = {
+            "task_id": state["task_id"],
+            "turn": state["turn"],
+            "controller": getattr(control_node_cls, "name", control_node_cls.__name__),
+            "observation": state["observation"],
+            "chosen_policy": decision.policy,
+            "belief": decision.belief,
+            "action_marginals": decision.action_marginals,
+            "epistemic_value": decision.epistemic_value,
+            "pragmatic_value": decision.pragmatic_value,
+        }
+        trace = state.get("decision_trace", []) + [record]
 
-    return {
-        "belief": decision.belief,
-        "last_policy": decision.policy,
-        "decision_trace": trace,
-    }
+        RESULTS_DIR.mkdir(exist_ok=True)
+        with open(log_path, "a") as f:
+            f.write(json.dumps(record) + "\n")
+
+        return {
+            "belief": decision.belief,
+            "last_policy": decision.policy,
+            "decision_trace": trace,
+        }
+
+    return control_step
+
+
+efe_control_step = make_control_step()
 
 
 def route_from_decision(state: OrchestratorState) -> str:
@@ -144,10 +158,10 @@ def increment_turn(state: OrchestratorState) -> OrchestratorState:
     return {"turn": state["turn"] + 1}
 
 
-def build_graph(agent_step=mock_agent_step):
+def build_graph(agent_step=mock_agent_step, control_step=efe_control_step):
     graph = StateGraph(OrchestratorState)
     graph.add_node("agent_step", agent_step)
-    graph.add_node("efe_control", efe_control_step)
+    graph.add_node("efe_control", control_step)
     graph.add_node("human_review", human_review_node)
     graph.add_node("finish", finish_node)
     graph.add_node("bump_turn", increment_turn)
@@ -255,10 +269,52 @@ def run_llm_demo():
     print(f"\nFull decision log: {DECISION_LOG_PATH}")
 
 
+def run_stage2_demo():
+    """Proves each Stage 2 baseline is genuinely pluggable into the same
+    LangGraph scaffold EFE runs in -- not just comparable in the fast
+    mock_agent_step-driven loop `baselines/run_stage2_eval.py` uses for
+    the statistical comparison. Runs Task A/B (mock agent) once per
+    controller."""
+    from .baselines.heuristic import HeuristicControlNode
+    from .baselines.react import ReActControlNode
+    from .baselines.router import LearnedRouterControlNode
+    from .baselines.voi import VOIControlNode
+
+    controllers = {
+        "efe": EFEControlNode,
+        "heuristic": HeuristicControlNode,
+        "learned_router": LearnedRouterControlNode,
+        "voi": VOIControlNode,
+        "react": ReActControlNode,
+    }
+
+    for name, cls in controllers.items():
+        print(f"=== controller={name} ===")
+        app = build_graph(control_step=make_control_step(cls, log_path=STAGE2_DECISION_LOG_PATH))
+
+        for label, task_id in [("Task A", f"stage2-{name}-A"), ("Task B", f"forced-bad-stage2-{name}-B")]:
+            config = {"configurable": {"thread_id": f"{name}-{label}"}}
+            result = app.invoke(
+                {"task_id": task_id, "turn": 0, "max_turns": 5, "decision_trace": []},
+                config=config,
+            )
+            policies = [rec["chosen_policy"] for rec in result["decision_trace"]]
+            state = app.get_state(config)
+            paused = bool(state.next)
+            print(f"  {label} ({task_id}): policies={policies} paused_for_human={paused}")
+            if paused:
+                app.invoke(Command(resume="Approved."), config=config)
+        print()
+
+    print(f"Full decision log: {STAGE2_DECISION_LOG_PATH}")
+
+
 if __name__ == "__main__":
     import sys
 
-    if "--llm" in sys.argv:
+    if "--stage2" in sys.argv:
+        run_stage2_demo()
+    elif "--llm" in sys.argv:
         run_llm_demo()
     else:
         run_demo()
