@@ -1,11 +1,12 @@
 # Handoff — read this first
 
-**Update:** Stage 1c (the real tool-calling LLM agent step) and Stage 2
+**Update:** Stage 1c (the real tool-calling LLM agent step), Stage 2
 (the four baselines, plus the model-matched comparison that actually
-answers Stage 0.5's question at real scale) are now done — see items
-6-8 below and `context/TODOS.md`. The rest of this file is the original
-cloud-session handoff (kept for history); read items 6-8 first, then the
-rest for background on what they build on.
+answers Stage 0.5's question at real scale), and OPA `policy_gate`
+wiring are now done — see items 6-9 below and `context/TODOS.md`. The
+rest of this file is the original cloud-session handoff (kept for
+history); read items 6-9 first, then the rest for background on what
+they build on.
 
 This file plus `context/TODOS.md` should let a fresh session resume
 without re-deriving anything. Everything referenced below is committed to
@@ -157,24 +158,37 @@ heuristic thresholds. Full thesis plan: `RESEARCH_PLAN.md`.
    you're deciding whether the router needs more training or a
    different reward design.
 
+9. **`policies/policy_gate.rego` + `src/aif_orchestrator/opa_policy.py`**
+   — real OPA evaluation for `policy_gate`, replacing the hardcoded
+   `allow` (`opa eval` shelled out per turn, no server, ~10s timeout,
+   fails safe to `"needs_review"` not `"allow"` if OPA errors or isn't
+   installed). Wired into `llm_agent.real_agent_step` only —
+   `mock_agent_step` stays hardcoded `allow` since it has no real
+   tool-call history to check a retry policy against. The policy itself
+   is small on purpose: `llm_agent.py`'s only tool is a read-only
+   `lookup_order`, so there's nothing irreversible yet worth a real
+   `deny` for beyond a retry-loop circuit breaker (3+ repeated lookups
+   of the same order_id → `deny`; a tool error → `needs_review`).
+   Extend the `.rego` file, not the Python wrapper, once there's a tool
+   worth denying. Verified: `allow` and `needs_review` both observed in
+   the real `--llm` demo; `deny` unit-verified directly (it needs 3+
+   identical retries, which the demo tasks don't happen to trigger).
+
 ## What's NOT done
 
-With Stage 1c and Stage 2 (both the mock-based and model-matched
-comparisons) done, the next piece of work is wiring a real OPA (Open
-Policy Agent) instance for the `policy_gate` observation modality —
-it's hardcoded to `allow` everywhere. After that, Stage 3 (real
-τ²-bench/HiL-Bench integration) is the next unstarted stage.
+Stage 3 (real τ²-bench/HiL-Bench integration) is the next unstarted
+stage — the first one that needs external benchmark repos and a real
+API budget, not just the credentials already configured.
 
 Full breakdown of what's done vs. not-started: `context/TODOS.md`.
 
 ## One thing worth deciding early when you resume
 
-**How to derive `confidence` and `policy_gate` from a real agent, if
-building anything beyond the current demo tool.** `confidence` currently
-uses a verifier-prompt call (`llm_agent.py`); self-consistency sampling
-was the other option, not used (real cost, multiple LLM calls).
-`policy_gate` still needs an actual OPA instance with real policies —
-that's the next concrete task (above).
+**How to derive `confidence` from a real agent, if building anything
+beyond the current demo tool** (`policy_gate` is now real, see item 9
+above). `confidence` currently uses a verifier-prompt call
+(`llm_agent.py`); self-consistency sampling was the other option, not
+used (real cost, multiple LLM calls).
 
 ## How to verify everything in this handoff is real, not claimed
 
@@ -191,5 +205,8 @@ python3 -m venv .venv && .venv/bin/pip install -e .
 
 All seven should run clean and reproduce the numbers/behavior described
 above and in `RESEARCH_PLAN.md`. `--llm` needs `LLM_API_KEY` /
-`LLM_MODEL` / `LLM_BASE_URL` set in `.env` at the repo root; the rest
-need no credentials.
+`LLM_MODEL` / `LLM_BASE_URL` set in `.env` at the repo root, and the
+`opa` CLI installed and on `PATH` for the `policy_gate` evaluation
+(`opa_policy.py` fails safe to `"needs_review"` if it's missing, so
+`--llm` still runs without it, just without a real policy check); the
+rest need no credentials or extra binaries.

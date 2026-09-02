@@ -13,15 +13,21 @@ open design decision in context/HANDOFF.md (the other option,
 self-consistency sampling, costs N extra calls instead of 1) -- a second,
 cheap LLM call rates the transcript so far as low/medium/high.
 
-policy_gate stays hardcoded "allow": wiring a real OPA instance is a
-separate, not-yet-started TODO (context/TODOS.md), independent of this
-agent step.
+policy_gate is a real OPA evaluation (opa_policy.py, policy against
+policies/policy_gate.rego) -- not an LLM call, a deterministic policy
+check against the same-order-lookup retry count and the last tool
+result. mock_agent_step still hardcodes "allow": it's a free, non-LLM
+stand-in that doesn't track real tool-call history to check a retry
+policy against (see its own docstring), so wiring OPA there wouldn't be
+checking anything real.
 """
 import json
 import os
 
 from dotenv import load_dotenv
 from openai import OpenAI
+
+from .opa_policy import evaluate_policy_gate
 
 load_dotenv()
 
@@ -72,6 +78,25 @@ def _lookup_order(order_id: str) -> dict:
     if order_id in ORDER_DB:
         return {"found": True, **ORDER_DB[order_id]}
     return {"found": False, "error": f"no order with id {order_id}"}
+
+
+def _count_prior_lookups(messages: list[dict], order_id: str) -> int:
+    """How many times `order_id` has already been looked up in this
+    conversation -- input to the OPA retry-loop circuit breaker
+    (policies/policy_gate.rego)."""
+    count = 0
+    for m in messages:
+        for tc in (m.get("tool_calls") or []):
+            fn = tc.get("function", {})
+            if fn.get("name") != "lookup_order":
+                continue
+            try:
+                args = json.loads(fn.get("arguments") or "{}")
+            except json.JSONDecodeError:
+                continue
+            if args.get("order_id") == order_id:
+                count += 1
+    return count
 
 
 def seed_messages(user_task: str) -> list[dict]:
@@ -139,19 +164,25 @@ def real_agent_step(messages: list[dict]) -> tuple[list[dict], dict]:
     if msg.tool_calls:
         tc = msg.tool_calls[0]
         args = json.loads(tc.function.arguments or "{}")
-        result = _lookup_order(args.get("order_id", ""))
+        order_id = args.get("order_id", "")
+        result = _lookup_order(order_id)
         messages.append({"role": "tool", "tool_call_id": tc.id, "content": json.dumps(result)})
         if result["found"]:
             tool_result, retrieval_quality = "success", "good"
         else:
             tool_result, retrieval_quality = "error", "poor"
+        same_order_lookup_count = _count_prior_lookups(messages, order_id)
     else:
         tool_result, retrieval_quality = "no_tool_called", "n/a"
+        same_order_lookup_count = 0
 
     observation = dict(
         tool_result=tool_result,
         confidence=_derive_confidence(messages),
-        policy_gate="allow",
+        policy_gate=evaluate_policy_gate({
+            "last_tool_result": tool_result,
+            "same_order_lookup_count": same_order_lookup_count,
+        }),
         retrieval_quality=retrieval_quality,
     )
     return messages, observation

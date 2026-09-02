@@ -32,9 +32,13 @@ actionable checklist.
   - **The learned router, even with belief parity and 100k training episodes (up from 10k — the model-matched env's observation space needed much more coverage), has a real, mechanistically-understood calibration weakness**: it has the highest raw reward (3.393) but the worst correct-escalation rate (0.255), because genuinely unresolvable tasks are a training-distribution minority and Q-learning optimizes aggregate reward, not rare-event recall. This is DIFFERENT from the belief-parity issue (which was about information access, not what training does with that information) — worth remembering if anyone proposes "just give the router more training" as a fix; more of the same training regime won't fix a class-imbalance problem.
   - React ties/beats VOI on raw reward again here (3.183, second overall) despite zero escalation ability — confirms Part 1's finding under the fair comparison.
 
-## BLOCKED — needs API credentials (this environment has none configured)
+## Done (OPA policy_gate wiring)
 
-- [ ] Wire an actual OPA (Open Policy Agent) instance for the `policy_gate` observation modality — currently hardcoded to `allow` in both the mock and real agent steps. Needs OPA running somewhere + real policies to evaluate against.
+- [x] **Real OPA instance for `policy_gate`** — `policies/policy_gate.rego` + `src/aif_orchestrator/opa_policy.py`. Shells out to `opa eval` per turn (no long-running server needed — a single CLI call per decision, evaluated via stdin-input) against the local `opa` binary. The policy is deliberately small given the current toolset (`llm_agent.py` only has one read-only `lookup_order` tool, nothing irreversible yet to genuinely deny): `deny` after 3+ repeated lookups of the same order_id (a real retry-loop circuit breaker), `needs_review` on a tool error, `allow` otherwise. Wired into `llm_agent.real_agent_step` only — `mock_agent_step` stays hardcoded `allow` since it doesn't track real tool-call history to check a retry policy against (a free non-LLM stand-in, per its own docstring). `opa_policy.evaluate_policy_gate` fails safe to `"needs_review"` (not `"allow"`) if OPA isn't installed or the policy errors. Verified end-to-end via `python -m aif_orchestrator.graph --llm`.
+  - Extend `policies/policy_gate.rego` (not the Python wrapper) for richer policies once `llm_agent.py` grows tools worth actually denying (e.g. a cancel/refund action).
+
+## Not started
+
 - [ ] Replace the plain JSONL decision log with real OTel GenAI semantic-convention spans (`gen_ai.agent` / `invoke_agent`) — noted in `RESEARCH_PLAN.md` §3.2 as still-experimental conventions; needs an actual OTel collector/backend to send spans to, which is an infra decision, not just code.
 
 ## Not started (Stage 3+ from RESEARCH_PLAN.md)
@@ -56,4 +60,4 @@ actionable checklist.
 
 ## Next up
 
-Stage 1c and Stage 2 are both done. Next: OPA `policy_gate` wiring, or start Stage 3 (real benchmark integration) directly.
+Stage 1c, Stage 2 (both parts), and OPA `policy_gate` wiring are all done. Next: Stage 3 (real τ²-bench/HiL-Bench benchmark integration) — needs API keys AND external repos, budget for it before starting.

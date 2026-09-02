@@ -13,9 +13,12 @@ mock stand-in (plumbing check) and against a model-matched simulator
 scale) — see [`docs/stage2-baselines-results.md`](docs/stage2-baselines-results.md)
 Part 2 for the real result: **EFE and VOI diverge here, unlike at
 Stage 0.5's toy scale** — EFE wins on escalation recall, VOI on
-precision and reward. See [`context/HANDOFF.md`](context/HANDOFF.md) and
+precision and reward. `policy_gate` is now a real OPA evaluation
+(`policies/policy_gate.rego`, `src/aif_orchestrator/opa_policy.py`), not
+the placeholder `allow` earlier stages used. See
+[`context/HANDOFF.md`](context/HANDOFF.md) and
 [`context/TODOS.md`](context/TODOS.md) for exactly what's done and
-what's next (OPA `policy_gate` wiring, then Stage 3).
+what's next (Stage 3).
 
 ## 1. Thesis statement
 
@@ -227,8 +230,14 @@ not about who has more information.
   action. Verified end-to-end (`python -m aif_orchestrator.graph --llm`):
   a resolvable order converges to `continue` in one turn, an unresolvable
   one genuinely escalates and pauses via `interrupt()`.
-- [ ] Not started: real OPA instance for the `policy_gate` observation
-  (still hardcoded `allow`, in both the mock and real agent steps).
+- [x] Real OPA instance for the `policy_gate` observation —
+  `policies/policy_gate.rego` + `src/aif_orchestrator/opa_policy.py`,
+  wired into `llm_agent.real_agent_step` (`mock_agent_step` stays
+  hardcoded `allow` — it's a free non-LLM stand-in with no real tool-call
+  history to check a retry policy against). `opa eval` per turn, no
+  server. Verified: `allow`/`needs_review` both observed in the real
+  `--llm` demo; the `deny` retry-loop-breaker path unit-verified
+  directly against `opa_policy.evaluate_policy_gate`.
 - Original deliverable (EFE node on real τ²-bench tasks with real
   epistemic/pragmatic logs) still pending Stage 2/3 — this stage proved
   the control-loop plumbing works with a real LLM, not benchmark results.
@@ -324,8 +333,7 @@ Stage 0 through Stage 2 are all complete, including the model-matched
 comparison that closes the Stage 0.5-parity gap Stage 2's first pass
 left open (`docs/stage2-baselines-results.md` Part 2: EFE and VOI
 diverge at real scale — EFE wins on escalation recall, VOI on precision
-and reward). Next: wire a real OPA instance for the `policy_gate`
-observation (currently hardcoded `allow`), then start Stage 3 (real
+and reward), and OPA is wired for `policy_gate`. Next: Stage 3 (real
 τ²-bench/HiL-Bench integration — the first stage that needs external
 benchmark repos and a real API budget, not just the credentials already
 configured).
