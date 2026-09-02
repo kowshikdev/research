@@ -98,6 +98,7 @@ class ControlNodeAgentState(BaseModel):
     belief: list[float]
     last_policy: Optional[str] = None
     decision_trace: list[dict] = []
+    escalated: bool = False
 
 
 ControlNodeAgentStateType = TypeVar("ControlNodeAgentStateType", bound="ControlNodeAgentState")
@@ -223,6 +224,32 @@ class ControlNodeAgent(
             state.messages.append(assistant_message)
             return assistant_message, state
 
+        # Once escalate_to_human has genuinely fired, treat it as
+        # terminal for this conversation -- unlike graph.py's
+        # interrupt(), which actually pauses the LangGraph run,
+        # transfer_to_human_agents returns a normal ToolMessage and tau2
+        # just keeps calling generate_next_message. Without this check,
+        # a control node whose belief/confidence stays poor after the
+        # transfer (a live risk: tool_result="success" nudges belief
+        # toward solvable, but a noisy confidence-verifier call can pull
+        # it right back) keeps re-escalating -- verified: a real retail
+        # sweep produced conversations with 2-7 transfer_to_human_agents
+        # calls each, almost all scoring reward 0.0. No tools are passed
+        # on these turns so the model literally cannot call transfer (or
+        # anything else) again.
+        if state.escalated:
+            if isinstance(message, MultiToolMessage):
+                state.messages.extend(message.tool_messages)
+            else:
+                state.messages.append(message)
+            assistant_message = generate(
+                model=self.llm, messages=state.system_messages + state.messages,
+                call_name="control_node_agent_post_escalation", max_tokens=600,
+                extra_body={"reasoning": {"max_tokens": 300}},
+            )
+            state.messages.append(assistant_message)
+            return assistant_message, state
+
         observation = self._derive_observation(message, state)
 
         if isinstance(message, MultiToolMessage):
@@ -245,6 +272,7 @@ class ControlNodeAgent(
                 content=None,
                 tool_calls=[ToolCall(name=TRANSFER_TOOL_NAME, arguments={"summary": summary})],
             )
+            state.escalated = True
         else:
             messages = state.system_messages + state.messages
             steer = POLICY_STEER.get(decision.policy)
