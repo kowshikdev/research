@@ -45,7 +45,7 @@ tractable (classical AIF is exponential in horizon × state-space size).
 
 | Tool | Role | Verified state (Sep 2026) |
 |---|---|---|
-| [`pymdp`](https://github.com/infer-actively/pymdp) ([paper](https://arxiv.org/abs/2201.03904)) | Primary EFE engine — discrete POMDP active inference | v1.0.0 rebuilt on JAX (GPU/TPU, autodiff, JIT, `vmap` batching); v1.0.1 released 2026-04-28. Actively maintained. |
+| [`pymdp`](https://github.com/infer-actively/pymdp) ([paper](https://arxiv.org/abs/2201.03904)) | Primary EFE engine — discrete POMDP active inference | v1.0.0 rebuilt on JAX (GPU/TPU, autodiff, JIT, `vmap` batching); v1.0.1 released 2026-04-28. Actively maintained. **PyPI install gotcha (confirmed Stage 0):** the package literally named `pymdp` on PyPI is an unrelated MDP toolkit by a different author — install `inferactively-pymdp` instead (still `import pymdp` in code). |
 | [`RxInfer.jl`](https://github.com/ReactiveBayes/RxInfer.jl) | Fallback engine if pymdp's discrete POMDP proves too rigid for continuous/mixed observation signals | Variational Constrained Bethe Free Energy via reactive message passing; supports hybrid discrete/continuous models. Actively maintained (JOSS paper published). |
 | [`ngc-learn`](https://github.com/NACLab/ngc-learn) (NACLab) | Angle B only — predictive-coding / generative memory | JAX-based, requires Python ≥3.10, JAX ≥0.4.28. Actively maintained; companion `ngc-museum` has reference models. |
 

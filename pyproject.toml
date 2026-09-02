@@ -1,0 +1,19 @@
+[project]
+name = "aif-orchestrator"
+version = "0.0.1"
+description = "Expected-Free-Energy control loop for LLM multi-agent orchestration"
+requires-python = ">=3.11"
+dependencies = [
+    # NOTE: PyPI has a name collision — the plain "pymdp" package is an
+    # unrelated MDP toolkit. The active-inference library from
+    # infer-actively/pymdp is published as "inferactively-pymdp"; it still
+    # imports as `import pymdp`.
+    "inferactively-pymdp",
+]
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+where = ["src"]
