@@ -171,17 +171,17 @@ def real_agent_step(messages: list[dict]) -> tuple[list[dict], dict]:
             tool_result, retrieval_quality = "success", "good"
         else:
             tool_result, retrieval_quality = "error", "poor"
-        same_order_lookup_count = _count_prior_lookups(messages, order_id)
+        same_tool_call_count = _count_prior_lookups(messages, order_id)
     else:
         tool_result, retrieval_quality = "no_tool_called", "n/a"
-        same_order_lookup_count = 0
+        same_tool_call_count = 0
 
     observation = dict(
         tool_result=tool_result,
         confidence=_derive_confidence(messages),
         policy_gate=evaluate_policy_gate({
             "last_tool_result": tool_result,
-            "same_order_lookup_count": same_order_lookup_count,
+            "same_tool_call_count": same_tool_call_count,
         }),
         retrieval_quality=retrieval_quality,
     )

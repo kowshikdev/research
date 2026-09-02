@@ -15,10 +15,14 @@ Part 2 for the real result: **EFE and VOI diverge here, unlike at
 Stage 0.5's toy scale** — EFE wins on escalation recall, VOI on
 precision and reward. `policy_gate` is now a real OPA evaluation
 (`policies/policy_gate.rego`, `src/aif_orchestrator/opa_policy.py`), not
-the placeholder `allow` earlier stages used. See
+the placeholder `allow` earlier stages used. **Stage 3's wiring is also
+done** — tau2-bench cloned and pinned, `EFEAgent` built and smoke-tested
+against the real benchmark's orchestrator (§ Stage 3 below) — but the
+actual evaluation sweep (the real cost center) has not started; that's
+an open scope/budget decision, not a coding task. See
 [`context/HANDOFF.md`](context/HANDOFF.md) and
 [`context/TODOS.md`](context/TODOS.md) for exactly what's done and
-what's next (Stage 3).
+what's next.
 
 ## 1. Thesis statement
 
@@ -271,7 +275,29 @@ not about who has more information.
   ("LLM-estimated P(success|context)") — see `context/TODOS.md` for why
   and what would still motivate building that version at Stage 3.
 
-### Stage 3 — Primary evaluation (weeks 8–12)
+### Stage 3 — Primary evaluation (weeks 8–12) — wiring done, sweep not started
+
+- [x] tau2-bench cloned (`external/tau2-bench`, gitignored, pinned commit
+  `a2c0247` / `tau2==1.0.1` — upstream repo is now branded τ³-bench,
+  same `sierra-research/tau2-bench` lineage this section refers to as
+  τ²-bench) and installed into this project's own venv alongside
+  `aif_orchestrator`.
+- [x] `EFEAgent` (`src/aif_orchestrator/tau2_integration/`) — wraps
+  `EFEControlNode` in tau2's turn-based agent contract, registered as a
+  community agent (no edits to the vendored repo). `escalate_to_human`
+  now genuinely calls tau2's built-in `transfer_to_human_agents` tool
+  (present in every core domain) — a real, benchmark-scored action, not
+  just a demo pause. Smoke-tested end-to-end on the `mock` domain
+  (reward 1.0, no errors) — see `context/TODOS.md` for the two gotchas
+  (Python 3.13 dropped `audioop`; tau2 reads `OPENROUTER_API_KEY` not
+  our own `.env`'s `LLM_API_KEY`).
+- [ ] **Not done: the actual evaluation sweep** — retail/airline/telecom,
+  EFE vs. the four Stage 2 baselines (which don't have tau2 agent
+  wrappers yet — only EFE does), multiple trials. This is the real cost
+  center the rest of this section describes; scope/budget for it is an
+  open decision, not yet started.
+- [ ] HiL-Bench (SWE + text-to-SQL) — not yet checked for a public
+  code/data release.
 - Run all four conditions on τ²-bench (retail, airline, telecom) and
   HiL-Bench (SWE + text-to-SQL).
 - Metrics: task success / pass^k, Ask-F1, over-asking vs. silent-failure

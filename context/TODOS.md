@@ -41,13 +41,16 @@ actionable checklist.
 
 - [ ] Replace the plain JSONL decision log with real OTel GenAI semantic-convention spans (`gen_ai.agent` / `invoke_agent`) — noted in `RESEARCH_PLAN.md` §3.2 as still-experimental conventions; needs an actual OTel collector/backend to send spans to, which is an infra decision, not just code.
 
-## Not started (Stage 3+ from RESEARCH_PLAN.md)
+## In progress (Stage 3: real benchmark integration)
 
-- [ ] **Stage 3 benchmark integration** — needs API keys AND external repos:
-  - Clone `sierra-research/tau2-bench`, pin a commit, record the grader version
-  - Get HiL-Bench (`arXiv:2604.09408`) — check for a public code/data release
-  - Run all 4 conditions (EFE, heuristic, router, ReAct) on both
-  - This is the most API-cost-intensive stage — budget for it before starting
+- [x] **tau2-bench cloned and wired, EFEAgent built and smoke-tested.** `external/tau2-bench` (gitignored, not vendored) cloned and pinned at commit `a2c0247` (tagged release `tau2==1.0.1` — the "real τ²-bench" from RESEARCH_PLAN.md is now branded τ³-bench upstream, same repo/lineage: `sierra-research/tau2-bench`). Installed via `uv sync` (its own `.venv`, Python 3.12) AND editable-installed into *our* venv (`pip install -e external/tau2-bench` + `audioop-lts` backport, since our venv is Python 3.13 which dropped stdlib `audioop` that tau2's voice-module import chain needs even when unused) so `aif_orchestrator` and `tau2` are importable in one process.
+  - `src/aif_orchestrator/tau2_integration/efe_agent.py`: `EFEAgent(LLMConfigMixin, HalfDuplexAgent)` — tau2's turn-based agent contract, wrapping `EFEControlNode` the same way `llm_agent.py` wraps the order-lookup demo. Registered as a "community" agent (`register.py`, calls `registry.register_agent_factory` from our own code — no edits to the vendored repo) under the name `"efe_agent"`.
+  - **`escalate_to_human` is a real, benchmark-scored action here**, not just a demo pause: every core tau2 domain (mock/retail/airline/telecom) has a built-in `transfer_to_human_agents(summary)` tool, so EFE choosing that policy makes the agent genuinely call it — tau2's own evaluation criteria can grade whether that was the right or wrong call for a task.
+  - `policy_gate` reuses `opa_policy.py`/`policies/policy_gate.rego` (field renamed `same_order_lookup_count` → `same_tool_call_count` to generalize past the order-lookup demo, `llm_agent.py` updated to match) — the retry-loop-count input is derived generically from tau2's own tool-call message history, not domain-specific.
+  - **Verified end-to-end**: `python -m aif_orchestrator.tau2_integration.run_stage3_smoke` — one `mock`-domain task, `efe_agent` vs `user_simulator`, both on `openrouter/z-ai/glm-5.3-flash`. Reward 1.0, no errors, real tool call (`create_task`) executed and observed correctly by the EFE control loop.
+  - **Gotcha:** tau2 (LiteLLM) reads `OPENROUTER_API_KEY`; our own `.env` uses `LLM_API_KEY` (`llm_agent.py`'s own naming). `run_stage3_smoke.py` maps one to the other rather than keeping two copies of the same secret.
+- [ ] **Not yet done: the actual evaluation sweep** — retail/airline/telecom domains, `efe_agent` vs. Stage 2's four baselines (would need their own tau2 agent wrappers, not yet built — only EFE has one), multiple trials each. **This is the real budget item** RESEARCH_PLAN.md flags — the smoke test above was one cheap mock-domain task; a real sweep is many tasks × many turns × (agent-LLM + user-simulator-LLM + our own confidence-verifier LLM) calls each. Get explicit sign-off on scope/budget before running this, not just before starting Stage 3 generally.
+- [ ] HiL-Bench (`arXiv:2604.09408`) — not yet checked for a public code/data release.
 - [ ] Stage 4: GAIA validation subset (optional, only if Stage 3 finishes early)
 - [ ] Stage 5: interpretability analysis — the epistemic/pragmatic decomposition logging already exists (`efe_controller.py`'s `Decision.epistemic_value` / `.pragmatic_value`), so this is mostly analysis + writeup once Stage 3 data exists
 - [ ] Stage 6: writing
@@ -60,4 +63,4 @@ actionable checklist.
 
 ## Next up
 
-Stage 1c, Stage 2 (both parts), and OPA `policy_gate` wiring are all done. Next: Stage 3 (real τ²-bench/HiL-Bench benchmark integration) — needs API keys AND external repos, budget for it before starting.
+Stage 1c, Stage 2 (both parts), and OPA `policy_gate` wiring are all done. Stage 3's wiring (tau2-bench cloned, EFEAgent built and smoke-tested) is done too. **Next decision point: scope/budget for the real eval sweep** (which domains, how many tasks/trials, whether to build tau2 agent wrappers for the Stage 2 baselines too before comparing) — not a coding task, a scope call.

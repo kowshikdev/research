@@ -1,0 +1,243 @@
+"""Stage 3: EFE control node wrapping a real tool-calling LLM agent
+inside tau2-bench (external/tau2-bench, pinned at a2c0247 / v1.0.1),
+plugged in the same way llm_agent.py wraps the order-lookup demo -- see
+docs/decision-pomdp.md and context/TODOS.md.
+
+tau2's turn-based contract (`HalfDuplexAgent.generate_next_message`,
+src/tau2/agent/README.md) splits generation and tool execution across
+two calls: the agent proposes a tool call, the orchestrator executes it,
+and the RESULT arrives as the `message` argument on the *next* call. So
+observation derivation happens at the START of each turn (from the
+incoming ToolMessage/MultiToolMessage/UserMessage -- i.e. what the
+*previous* turn's action produced), before generating this turn's
+response -- mirroring how llm_agent.py derives its observation only
+after a tool call resolves.
+
+`escalate_to_human` is not just a steering hint here, unlike the other
+five policies -- every core domain (mock, retail, airline, telecom) has
+a real `transfer_to_human_agents(summary)` tool, so EFE choosing that
+policy makes the agent genuinely call it, a real, benchmark-scored
+action (tau2's evaluation criteria can check whether transfer was the
+correct/incorrect call for a task) -- this is the first point in the
+project where "escalate" is graded by an external benchmark rather than
+just pausing a LangGraph demo.
+"""
+from typing import Generic, Optional, TypeVar
+
+from pydantic import BaseModel
+from tau2.agent.base.llm_config import LLMConfigMixin
+from tau2.agent.base_agent import HalfDuplexAgent, ValidAgentInputMessage
+from tau2.data_model.message import (
+    APICompatibleMessage,
+    AssistantMessage,
+    Message,
+    MultiToolMessage,
+    SystemMessage,
+    ToolCall,
+    ToolMessage,
+    UserMessage,
+)
+from tau2.environment.tool import Tool
+from tau2.utils.llm_utils import generate
+
+from ..efe_controller import D_PRIOR, EFEControlNode, Observation
+from ..opa_policy import evaluate_policy_gate
+
+AGENT_INSTRUCTION = """
+You are a customer service agent that helps the user according to the <policy> provided below.
+In each turn you can either:
+- Send a message to the user.
+- Make a tool call.
+You cannot do both at the same time.
+
+Try to be helpful and always follow the policy. Always make sure you generate valid JSON only.
+""".strip()
+
+SYSTEM_PROMPT = """
+<instructions>
+{agent_instruction}
+</instructions>
+<policy>
+{domain_policy}
+</policy>
+""".strip()
+
+TRANSFER_TOOL_NAME = "transfer_to_human_agents"
+
+# Mirrors llm_agent.POLICY_STEER -- EFE's chosen policy has to actually
+# change what the agent does next turn, or a non-terminal policy just
+# re-prompts against unchanged context and the model repeats itself.
+# Injected as an EPHEMERAL extra system message for this turn's
+# generation only -- never appended to state.messages, so the official
+# transcript tau2 evaluates and shows the user simulator stays clean.
+POLICY_STEER = {
+    "retry": "That didn't fully resolve it. Retry: reformulate your last tool call, "
+    "or rephrase your message to the customer.",
+    "call_tool": "Use one of the available tools now to make progress on this request "
+    "before responding to the customer.",
+    "gather_info": "You don't have enough information yet. Ask the customer a clarifying "
+    "question, or try a different tool call, before finalizing an answer.",
+    "hand_off_to_agent": "Consider whether a different specialized flow or tool better "
+    "fits this request before proceeding.",
+}
+
+
+class EFEAgentState(BaseModel):
+    system_messages: list[SystemMessage]
+    messages: list[APICompatibleMessage]
+    belief: list[float]
+    last_policy: Optional[str] = None
+    decision_trace: list[dict] = []
+
+
+EFEAgentStateType = TypeVar("EFEAgentStateType", bound="EFEAgentState")
+
+
+def _tool_call_key(name: str, arguments: dict) -> tuple:
+    return (name, tuple(sorted(arguments.items())))
+
+
+class EFEAgent(LLMConfigMixin, HalfDuplexAgent[EFEAgentStateType], Generic[EFEAgentStateType]):
+    """Half-duplex tau2 agent whose turn-to-turn control (continue / retry
+    / call_tool / gather_info / escalate_to_human / hand_off_to_agent) is
+    chosen by EFEControlNode instead of being left entirely to the LLM."""
+
+    def __init__(self, tools: list[Tool], domain_policy: str, llm: str, llm_args: Optional[dict] = None):
+        super().__init__(tools=tools, domain_policy=domain_policy, llm=llm, llm_args=llm_args)
+        self._transfer_tool = next((t for t in tools if t.name == TRANSFER_TOOL_NAME), None)
+
+    @property
+    def system_prompt(self) -> str:
+        return SYSTEM_PROMPT.format(domain_policy=self.domain_policy, agent_instruction=AGENT_INSTRUCTION)
+
+    def get_init_state(self, message_history: Optional[list[Message]] = None) -> EFEAgentStateType:
+        return EFEAgentState(
+            system_messages=[SystemMessage(role="system", content=self.system_prompt)],
+            messages=message_history or [],
+            belief=list(D_PRIOR),
+        )
+
+    def _derive_observation(self, incoming: ValidAgentInputMessage, state: EFEAgentStateType) -> Observation:
+        if isinstance(incoming, (ToolMessage, MultiToolMessage)):
+            tool_messages = incoming.tool_messages if isinstance(incoming, MultiToolMessage) else [incoming]
+            had_error = any(m.error for m in tool_messages)
+            tool_result = "error" if had_error else "success"
+            # retrieval_quality per docs/decision-pomdp.md: relevance of
+            # retrieved context "when gather_info was last taken" --
+            # meaningless for other policies, so n/a otherwise.
+            retrieval_quality = ("poor" if had_error else "good") if state.last_policy == "gather_info" else "n/a"
+            same_tool_call_count = self._count_repeated_last_call(state)
+        else:
+            tool_result, retrieval_quality = "no_tool_called", "n/a"
+            same_tool_call_count = 0
+
+        policy_gate = evaluate_policy_gate({
+            "last_tool_result": tool_result,
+            "same_tool_call_count": same_tool_call_count,
+        })
+        confidence = self._derive_confidence(state)
+        return Observation(
+            tool_result=tool_result, confidence=confidence,
+            policy_gate=policy_gate, retrieval_quality=retrieval_quality,
+        )
+
+    def _count_repeated_last_call(self, state: EFEAgentStateType) -> int:
+        last_call = None
+        for m in reversed(state.messages):
+            if isinstance(m, AssistantMessage) and m.is_tool_call():
+                last_call = m.tool_calls[0]
+                break
+        if last_call is None:
+            return 0
+        key = _tool_call_key(last_call.name, last_call.arguments)
+        count = 0
+        for m in state.messages:
+            if isinstance(m, AssistantMessage) and m.is_tool_call():
+                for tc in m.tool_calls:
+                    if _tool_call_key(tc.name, tc.arguments) == key:
+                        count += 1
+        return count
+
+    def _derive_confidence(self, state: EFEAgentStateType) -> str:
+        transcript = "\n".join(
+            f"{getattr(m, 'role', type(m).__name__)}: {getattr(m, 'content', None) or getattr(m, 'tool_calls', None)}"
+            for m in state.messages[-4:]
+        )
+        resp = generate(
+            model=self.llm,
+            messages=[
+                SystemMessage(
+                    role="system",
+                    content=(
+                        "Rate confidence this customer service task is on track to resolve "
+                        "correctly. Reply with exactly one word: low, medium, or high."
+                    ),
+                ),
+                UserMessage.text(content=transcript or "(no transcript yet)"),
+            ],
+            call_name="efe_confidence",
+            max_tokens=150,
+            extra_body={"reasoning": {"max_tokens": 100}},
+        )
+        text = (resp.content or "").strip().lower()
+        for bin_ in ("low", "medium", "high"):
+            if bin_ in text:
+                return bin_
+        return "medium"
+
+    def generate_next_message(
+        self, message: ValidAgentInputMessage, state: EFEAgentStateType
+    ) -> tuple[AssistantMessage, EFEAgentStateType]:
+        observation = self._derive_observation(message, state)
+
+        if isinstance(message, MultiToolMessage):
+            state.messages.extend(message.tool_messages)
+        else:
+            state.messages.append(message)
+
+        node = EFEControlNode(prior=state.belief)
+        decision = node.decide(observation)
+        state.belief = list(decision.belief.values())
+        state.decision_trace.append({
+            "chosen_policy": decision.policy,
+            "observation": observation.__dict__,
+            "belief": decision.belief,
+        })
+
+        if decision.policy == "escalate_to_human" and self._transfer_tool is not None:
+            summary = self._build_transfer_summary(state)
+            assistant_message = AssistantMessage.text(
+                content=None,
+                tool_calls=[ToolCall(name=TRANSFER_TOOL_NAME, arguments={"summary": summary})],
+            )
+        else:
+            messages = state.system_messages + state.messages
+            steer = POLICY_STEER.get(decision.policy)
+            if steer:
+                messages = messages + [SystemMessage(role="system", content=steer)]
+            assistant_message = generate(
+                model=self.llm, tools=self.tools, messages=messages,
+                call_name="efe_agent_response", max_tokens=600,
+                extra_body={"reasoning": {"max_tokens": 300}},
+            )
+
+        state.messages.append(assistant_message)
+        state.last_policy = decision.policy
+        return assistant_message, state
+
+    def _build_transfer_summary(self, state: EFEAgentStateType) -> str:
+        for m in reversed(state.messages):
+            if isinstance(m, UserMessage) and m.content:
+                return f"Escalating per EFE control node: {m.content[:200]}"
+        return "Escalating per EFE control node: unable to resolve automatically."
+
+
+def create_efe_agent(tools, domain_policy, **kwargs):
+    """Factory function for EFEAgent, registered under the name "efe_agent"
+    (src/aif_orchestrator/tau2_integration/register.py) -- pass
+    --agent efe_agent on the tau2 CLI, or "efe_agent" to run_domain/
+    run_single_task's TextRunConfig(agent=...)."""
+    return EFEAgent(
+        tools=tools, domain_policy=domain_policy,
+        llm=kwargs.get("llm"), llm_args=kwargs.get("llm_args"),
+    )

@@ -2,11 +2,13 @@
 
 **Update:** Stage 1c (the real tool-calling LLM agent step), Stage 2
 (the four baselines, plus the model-matched comparison that actually
-answers Stage 0.5's question at real scale), and OPA `policy_gate`
-wiring are now done — see items 6-9 below and `context/TODOS.md`. The
-rest of this file is the original cloud-session handoff (kept for
-history); read items 6-9 first, then the rest for background on what
-they build on.
+answers Stage 0.5's question at real scale), OPA `policy_gate` wiring,
+and Stage 3's *wiring* (tau2-bench cloned + `EFEAgent` built and
+smoke-tested — but not the actual evaluation sweep, which is the real
+cost center and an open scope/budget decision) are now done — see
+items 6-10 below and `context/TODOS.md`. The rest of this file is the
+original cloud-session handoff (kept for history); read items 6-10
+first, then the rest for background on what they build on.
 
 This file plus `context/TODOS.md` should let a fresh session resume
 without re-deriving anything. Everything referenced below is committed to
@@ -174,11 +176,45 @@ heuristic thresholds. Full thesis plan: `RESEARCH_PLAN.md`.
    the real `--llm` demo; `deny` unit-verified directly (it needs 3+
    identical retries, which the demo tasks don't happen to trigger).
 
+10. **`src/aif_orchestrator/tau2_integration/`** — Stage 3's real
+    benchmark wiring. `external/tau2-bench` (gitignored, cloned and
+    pinned at commit `a2c0247` / `tau2==1.0.1`; upstream is now branded
+    τ³-bench but it's the same `sierra-research/tau2-bench` repo/lineage
+    RESEARCH_PLAN.md calls τ²-bench) is installed both in its own venv
+    (`uv sync`) and editable into *this* project's venv
+    (`pip install -e external/tau2-bench` + the `audioop-lts` backport —
+    tau2's voice-module import chain needs stdlib `audioop`, which
+    Python 3.13 dropped; our venv is 3.13, tau2's own is 3.12 where it
+    still works). `efe_agent.py` implements `EFEAgent`, a real tau2
+    `HalfDuplexAgent` wrapping `EFEControlNode` the same way
+    `llm_agent.py` wraps the order-lookup demo; `register.py` registers
+    it as a community agent (`registry.register_agent_factory`, called
+    from our own code — the vendored repo is never edited). **New in
+    this integration**: `escalate_to_human` now calls a real tool
+    (`transfer_to_human_agents`, present in every core tau2 domain) —
+    tau2's own evaluator can grade whether that call was actually
+    correct for a task, unlike the LangGraph demo's `interrupt()` pause,
+    which just proves the mechanism works without external grading.
+
+    **Smoke-tested only** (`run_stage3_smoke.py`, one `mock`-domain
+    task, reward 1.0) — the real evaluation sweep (retail/airline/
+    telecom, EFE vs. baselines, multiple trials) has NOT run. That's
+    the actual cost center RESEARCH_PLAN.md's Stage 3 section warns
+    about; the smoke test cost about as much as one ordinary eval task.
+    Get explicit scope/budget sign-off before running a real sweep.
+    Two gotchas if you touch this: tau2 (LiteLLM) reads
+    `OPENROUTER_API_KEY`, not our own `.env`'s `LLM_API_KEY` — mapped
+    in `run_stage3_smoke.py`, do the same in any new entry point; and
+    only EFE has a tau2 agent wrapper so far — the four Stage 2
+    baselines would each need their own before a real EFE-vs-baselines
+    comparison on tau2-bench is possible.
+
 ## What's NOT done
 
-Stage 3 (real τ²-bench/HiL-Bench integration) is the next unstarted
-stage — the first one that needs external benchmark repos and a real
-API budget, not just the credentials already configured.
+The actual Stage 3 evaluation sweep (see item 10) — the wiring is done,
+the sweep is a scope/budget decision, not a coding task. HiL-Bench
+(`arXiv:2604.09408`) also hasn't been checked for a public code/data
+release yet.
 
 Full breakdown of what's done vs. not-started: `context/TODOS.md`.
 
