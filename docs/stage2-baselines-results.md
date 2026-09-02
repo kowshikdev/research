@@ -5,7 +5,19 @@ Stage 0.5 kill-test's toy versions to the real decision-POMDP
 (`docs/decision-pomdp.md`), evaluated against EFE. See
 `src/aif_orchestrator/baselines/` and RESEARCH_PLAN.md Stage 2.
 
-## Setup
+This document has two comparisons. **Part 1** (`run_stage2_eval.py`)
+runs everything against `graph.mock_agent_step`, a hand-scripted
+stand-in — it validates the plumbing and caught two real bugs, but is
+NOT a fair test of decision quality (see its caveat). **Part 2**
+(`run_model_matched_eval.py`) closes that gap: every controller runs
+against a simulator that samples from `efe_controller.py`'s own
+generative model — the real analogue of what `kill_test/env.py` did for
+Stage 0.5 — and is the comparison that actually matters. Read Part 2 if
+you only have time for one.
+
+## Part 1: mock_agent_step comparison (plumbing sanity check)
+
+### Setup
 
 Each controller shares `EFEControlNode`'s interface (`decide(observation,
 valid_policies=None) -> Decision`) and is evaluated the same way: 3000
@@ -29,7 +41,7 @@ also verified running inside the actual LangGraph scaffold (not just
 this fast loop), including the real `escalate_to_human` → `interrupt()`
 pause: `python -m aif_orchestrator.graph --stage2`.
 
-## Results (3000 episodes each)
+### Results (3000 episodes each)
 
 | Controller | avg reward (95% CI) | correct escalation | unnecessary escalation | normal resolved | forced stop | avg steps |
 |---|---|---|---|---|---|---|
@@ -39,7 +51,7 @@ pause: `python -m aif_orchestrator.graph --stage2`.
 | react | 1.864 [1.728, 2.001] | 0.000 | 0.000 | 0.992 | 0.306 | 3.19 |
 | efe_active_inference | 1.564 [1.468, 1.659] | 1.000 | 0.000 | 0.682 | 0.223 | 3.13 |
 
-## Findings
+### Findings
 
 **React ties VOI on raw reward (1.864 vs 1.870, CIs overlap almost
 entirely) despite having zero escalation capability** (`correct_
@@ -68,7 +80,7 @@ as evidence against EFE's approach — see the model-mismatch caveat
 below, which explains why this comparison isn't actually testing the
 same thing Stage 0.5 tested.
 
-## Important caveat: this is not a fair like-for-like test the way Stage 0.5 was
+### Caveat: this is not a fair like-for-like test the way Stage 0.5 was
 
 The Stage 0.5 kill-test's environment (`kill_test/env.py`) **was**
 literally the same generative model VOI and EFE both reasoned over —
@@ -79,31 +91,115 @@ purely to exercise the graph, not to model anything real"), not a
 sample from `efe_controller.py`'s `OBS_DISTS`/`B_TRANSITIONS`. Every
 controller here (heuristic excepted, which doesn't consult a belief)
 carries some degree of **model mismatch** between what it assumes
-(EFE's own hand-specified, explicitly-not-calibrated placeholder
-matrices — see `efe_controller.py`'s docstring) and what
-`mock_agent_step` actually does. What Stage 2 actually validates:
+and what `mock_agent_step` actually does. What Part 1 validates: all
+five controllers share one interface and are genuinely pluggable into
+the real LangGraph scaffold (incl. the real `interrupt()` pause), the
+belief-state-parity fix works, and the reward-hacking bug it caught is
+fixed. What it does **not** validate: decision quality under a
+correctly-specified model. That's Part 2.
 
-1. All five controllers share one interface and are genuinely pluggable
-   into the same LangGraph scaffold (`graph.build_graph(control_step=...)`,
-   `graph.run_stage2_demo()`), including the real `interrupt()` pause.
-2. The belief-state-parity fix the kill-test flagged as necessary
-   (`docs/stage0.5-kill-test-results.md`) is implemented and the router
-   now correctly learns to escalate (an earlier version, without
-   ground-truth-keyed reward, never learned to — see `belief.py`).
-3. The evaluation harness and reward design are debugged against a caught
-   reward-hacking failure mode.
+## Part 2: model-matched comparison (the one that actually answers Stage 0.5's question at real scale)
 
-What it does **not** validate: EFE's actual decision quality under a
-correctly-specified model at this scale, or a fair repeat of Stage
-0.5's Bayes-optimality claim. That requires either (a) a real
-generative-model-matched simulator for the 4-state/6-policy decision-
-POMDP (not yet built), or (b) Stage 3's real benchmark data. EFE's A/B/C/E/D
-values remain uncalibrated placeholders (per `efe_controller.py` and
-RESEARCH_PLAN.md Stage 1) — this result is one more data point motivating
-that calibration work, not a finding to report as-is in the thesis.
+### Setup
 
-**Decision:** proceed to OPA `policy_gate` wiring, then Stage 3. If a
-model-matched Stage 2 comparison is wanted before Stage 3, it needs a
-purpose-built simulator over `efe_controller.py`'s own matrices (treating
-them as ground truth for that comparison only) — not yet done, noted in
-`context/TODOS.md`.
+Same reward design and same five controllers, but the environment is
+now `model_env.ModelMatchedEnv`: it samples the true `task_state` from
+`efe_controller.D_PRIOR`, samples each observation modality from
+`efe_controller.OBS_DISTS[true_state]`, and transitions the true state
+via `efe_controller.B_TRANSITIONS[policy][true_state]` — i.e. it treats
+EFE's own generative model as ground truth, exactly as VOI and EFE both
+assume it is. `learned_router` is retrained against this same
+environment (`router.model_matched_source_factory`) — training against
+the mock and evaluating against this would just be testing transfer,
+not closing the gap. Ground truth for the escalation metrics is the
+env's actual sampled `task_state` (`needs_human`/`likely_to_fail` count
+as genuinely unresolvable), not the coarse `forced-bad` task-id proxy
+Part 1 used.
+
+The router needed far more training here than Part 1's default (10k
+episodes): `ModelMatchedEnv`'s joint observation space (144 bins) ×
+belief buckets (8) is much richer than `mock_agent_step`'s handful of
+scripted combos, so it's trained for 100k episodes
+(`run_model_matched_eval.py`) to get reasonable state coverage
+(~1000/1152 possible keys).
+
+Run: `.venv/Scripts/python -m aif_orchestrator.baselines.run_model_matched_eval`
+(raw output: `results/model_matched_baselines_results.json`).
+
+### Results (3000 episodes each)
+
+| Controller | avg reward (95% CI) | correct escalation | unnecessary escalation | resolvable resolved | forced stop | avg steps |
+|---|---|---|---|---|---|---|
+| heuristic | 2.999 [2.918, 3.079] | 0.915 | 0.067 | 0.924 | 0.016 | 1.67 |
+| learned_router | 3.393 [3.327, 3.460] | 0.255 | 0.009 | 0.967 | 0.075 | 1.97 |
+| voi_decision_theoretic | 3.142 [3.072, 3.212] | 0.766 | 0.002 | 0.891 | 0.115 | 2.20 |
+| react | 3.183 [3.105, 3.261] | 0.000 | 0.000 | 0.983 | 0.113 | 2.01 |
+| efe_active_inference | 2.804 [2.723, 2.885] | 0.951 | 0.062 | 0.860 | 0.073 | 1.87 |
+
+### Findings
+
+**EFE has the best correct-escalation rate of all five (0.951, beating
+even heuristic's 0.915) but the lowest average reward.** It's the most
+conservative escalator — it catches almost every genuinely unresolvable
+task, at the cost of throughput on the resolvable ones
+(`resolvable_resolved=0.860`, the worst of the five). This is a
+real, model-matched result (unlike Part 1's), and it's a defensible
+trade for a system whose whole point is catching cases a human should
+see — but it means **EFE does not simply dominate VOI here the way
+Stage 0.5 found at toy scale.**
+
+**VOI is the best-calibrated controller on precision**
+(`unnecessary_escalation=0.002`, the lowest) while still catching most
+real cases (`correct_escalation=0.766`), and it beats EFE on reward.
+This is the headline divergence from Stage 0.5: there, EFE ≈ VOI with
+overlapping CIs on a 3-state/3-action toy model. Here, at the real
+4-state/6-policy scale, **they diverge** — EFE trades reward for
+escalation recall, VOI is the more balanced of the two. Both remain
+clearly better-calibrated than the router or ReAct on
+`unnecessary_escalation` (0.002 and 0.062 vs. the router's 0.009 sounds
+close, but see below — the router's low unnecessary-escalation rate
+here is a symptom of a different problem, not good calibration).
+
+**The learned router has the highest reward (3.393) but the worst
+correct-escalation rate (0.255) — worse than not-yet-fully-trained
+Part-1 numbers, not better, despite 100k training episodes and solid
+state coverage.** This replicated across three training seeds during
+development (`correct_escalation` between 0.26 and 0.37 across seeds
+at 100k episodes) — not noise. The mechanism: genuinely unresolvable
+tasks are a minority of the training distribution (`D_PRIOR`'s
+`needs_human + likely_to_fail` mass is 0.15, and only ~2-3% of eval
+episodes end in one), and Q-learning optimizes *aggregate* reward over
+that distribution — so a policy that quietly accepts the occasional
+large `belief.OUTCOME_ADJUSTMENT` silent-failure penalty (-2.0) in
+exchange for resolving the common case fast maximizes average reward
+better than one that reliably escalates. **This is a genuine, reward-
+maximizing-under-class-imbalance failure mode distinct from the
+belief-state-parity issue Stage 0.5 fixed** — belief parity gave the
+router access to the same *information* EFE/VOI have; it says nothing
+about whether reward-maximizing training will actually use that
+information to catch a rare, high-stakes event. Reporting this as-is
+rather than re-tuning the router's reward until the number looks
+better: it's a real property of this baseline design, and arguably the
+more interesting finding than a well-calibrated router would have been.
+
+**ReAct again looks statistically strong on raw reward (3.183, second
+overall) despite zero escalation ability by construction.** Now even
+more strikingly than Part 1, since it's competitive with VOI
+(`3.183` vs `3.142`, CIs close) — the same point Part 1 made, confirmed
+under the fair, model-matched comparison this time.
+
+### What this closes and what's still open
+
+This closes the gap Part 1 flagged: it's a genuine repeat of Stage
+0.5's methodology (controllers reasoning over the same true generative
+model they're evaluated against) at the real decision-POMDP's scale.
+Unlike Stage 0.5, EFE and VOI **do not** converge to statistically
+indistinguishable behavior here — they trade off differently on
+escalation recall vs. reward, and the learned router (even with belief
+parity and heavy training) has a real, mechanistically-understood
+calibration weakness Stage 0.5's simpler setup didn't surface. All of
+this is still against EFE's uncalibrated placeholder A/B/C/E/D values
+(`efe_controller.py`) — Stage 3 calibration against real agent
+trajectories could shift where EFE lands on the reward/recall trade-off
+shown here. Treat this as a real, informative result for the thesis
+(more so than Part 1), not as a final word on EFE vs. VOI.

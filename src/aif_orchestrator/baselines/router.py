@@ -8,22 +8,27 @@ observation alone. Without this, any gap to EFE/VOI is arguably a
 feature-engineering artifact rather than a finding about control
 mechanisms -- see RESEARCH_PLAN.md §5.
 
-Trained against `graph.mock_agent_step` directly (not through the full
-LangGraph app) -- it's already a free, deterministic-per-seed stand-in
-environment that reacts to whatever `last_policy` was chosen, regardless
-of which controller produced it, so it's a legitimate, zero-API-cost
-training environment for this stage. Reward is `belief.step_reward`:
-the real C-weighted observation payoff only on a terminal turn
-(continue/escalate chosen, or turns exhausted), a flat cost otherwise --
-see belief.py's docstring for why paying the full observation reward on
-every turn (an earlier version of this) taught the router to never
-choose `continue` at all.
+Trains by default against `graph.mock_agent_step` (not through the full
+LangGraph app) -- a free, deterministic-per-seed stand-in that reacts to
+whatever `last_policy` was chosen, regardless of which controller
+produced it. `train()`'s `source_factory` is pluggable, though: pass
+`model_matched_source_factory` (below) to train against
+`model_env.ModelMatchedEnv` instead -- the same generative model
+EFE/VOI assume, for the model-matched Stage 2 comparison
+(`run_model_matched_eval.py`) that closes the gap
+`docs/stage2-baselines-results.md` flags in the mock-based one. Reward
+is `belief.step_reward`: the real C-weighted observation payoff only on
+a terminal turn (continue/escalate chosen, or turns exhausted), a flat
+cost otherwise -- see belief.py's docstring for why paying the full
+observation reward on every turn (an earlier version of this) taught
+the router to never choose `continue` at all.
 """
 import random
 
 from .. import efe_controller as efe
 from ..graph import mock_agent_step
 from .belief import bayes_update, step_reward, uniform_decision
+from .model_env import ModelMatchedEnv
 
 TERMINAL_POLICIES = ("continue", "escalate_to_human")
 
@@ -36,6 +41,54 @@ def _belief_bucket(belief):
     best = max(range(len(belief)), key=lambda i: belief[i])
     confident = 1 if belief[best] >= 0.6 else 0
     return (best, confident)
+
+
+class _MockAgentEpisodeSource:
+    """Adapter so training can drive graph.mock_agent_step through the
+    same reset()/step(policy)/forced_bad interface as ModelMatchedEnv."""
+
+    def __init__(self, rng, ep):
+        forced_bad = rng.random() < 0.3
+        # ~30% forced-bad trajectories so the router actually sees enough
+        # escalate-worthy states to learn from (mock_agent_step
+        # deterministically returns error/low-confidence observations for
+        # any task_id starting with "forced-bad").
+        self.forced_bad = forced_bad
+        self._state = {"task_id": f"forced-bad-train-{ep}" if forced_bad else f"train-{ep}"}
+        self._turn = 0
+
+    def reset(self):
+        self._state["turn"] = self._turn
+        return efe.Observation(**mock_agent_step(self._state)["observation"])
+
+    def step(self, policy):
+        self._state["last_policy"] = policy
+        self._turn += 1
+        self._state["turn"] = self._turn
+        return efe.Observation(**mock_agent_step(self._state)["observation"])
+
+
+class _ModelMatchedEpisodeSource:
+    """Adapter over ModelMatchedEnv exposing the same interface -- ground
+    truth (`forced_bad`) comes from the env's actual sampled true state,
+    not a task-id convention."""
+
+    def __init__(self, rng, ep):
+        self._env = ModelMatchedEnv(seed=rng.randint(0, 2**31 - 1))
+
+    @property
+    def forced_bad(self):
+        return self._env.state in ("needs_human", "likely_to_fail")
+
+    def reset(self):
+        return self._env.reset()
+
+    def step(self, policy):
+        return self._env.step(policy)
+
+
+def model_matched_source_factory(rng, ep):
+    return _ModelMatchedEpisodeSource(rng, ep)
 
 
 class LearnedRouterControlNode:
@@ -57,24 +110,17 @@ class LearnedRouterControlNode:
 
     @classmethod
     def train(cls, num_episodes=10000, max_turns=5, alpha=0.1, gamma=0.9,
-              epsilon_start=0.3, epsilon_end=0.02, seed=1000):
+              epsilon_start=0.3, epsilon_end=0.02, seed=1000, source_factory=_MockAgentEpisodeSource):
         cls._q = {}
         rng = random.Random(seed)
         for ep in range(num_episodes):
             epsilon = epsilon_start + (epsilon_end - epsilon_start) * (ep / num_episodes)
-            # ~30% forced-bad trajectories so the router actually sees
-            # enough escalate-worthy states to learn from (mock_agent_step
-            # deterministically returns error/low-confidence observations
-            # for any task_id starting with "forced-bad").
-            forced_bad = rng.random() < 0.3
-            task_id = f"forced-bad-train-{ep}" if forced_bad else f"train-{ep}"
-            state = {"task_id": task_id}
+            source = source_factory(rng, ep)
+            observation = source.reset()
             belief = list(efe.D_PRIOR)
             prev_key = prev_policy = prev_reward = None
 
             for turn in range(max_turns):
-                state["turn"] = turn
-                observation = efe.Observation(**mock_agent_step(state)["observation"])
                 belief = bayes_update(belief, observation)
                 key = (_belief_bucket(belief), _obs_key(observation))
                 qvals = cls._get_q(key)
@@ -92,7 +138,7 @@ class LearnedRouterControlNode:
                 # pieces are needed (an earlier version without either
                 # never learned to choose `continue`, and separately
                 # never learned to escalate specifically).
-                reward = step_reward(observation, is_terminal, policy=policy, forced_bad=forced_bad)
+                reward = step_reward(observation, is_terminal, policy=policy, forced_bad=source.forced_bad)
 
                 if prev_key is not None:
                     target = prev_reward + gamma * max(qvals.values())
@@ -104,7 +150,7 @@ class LearnedRouterControlNode:
                     q[policy] += alpha * (reward - q[policy])
                     break
 
-                state["last_policy"] = policy
+                observation = source.step(policy)
                 prev_key, prev_policy, prev_reward = key, policy, reward
 
     def decide(self, observation, valid_policies=None) -> efe.Decision:

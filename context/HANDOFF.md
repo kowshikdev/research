@@ -1,10 +1,11 @@
 # Handoff — read this first
 
 **Update:** Stage 1c (the real tool-calling LLM agent step) and Stage 2
-(the four baselines) are now done — see items 6 and 7 below and
-`context/TODOS.md`. The rest of this file is the original cloud-session
-handoff (kept for history); read items 6-7 first, then the rest for
-background on what they build on.
+(the four baselines, plus the model-matched comparison that actually
+answers Stage 0.5's question at real scale) are now done — see items
+6-8 below and `context/TODOS.md`. The rest of this file is the original
+cloud-session handoff (kept for history); read items 6-8 first, then the
+rest for background on what they build on.
 
 This file plus `context/TODOS.md` should let a fresh session resume
 without re-deriving anything. Everything referenced below is committed to
@@ -107,12 +108,11 @@ heuristic thresholds. Full thesis plan: `RESEARCH_PLAN.md`.
    demoed by `graph.run_stage2_demo()` / `python -m aif_orchestrator.graph --stage2`
    — includes verifying the real `interrupt()` pause for each
    controller). A fast statistical comparison (3000 episodes each
-   against `mock_agent_step`) is `baselines/run_stage2_eval.py`; full
-   results and an important caveat on what this comparison does and
-   doesn't establish (it is NOT a repeat of Stage 0.5's model-matched
-   comparison — `mock_agent_step` isn't drawn from the same generative
-   model EFE/VOI assume) are in `docs/stage2-baselines-results.md` --
-   **read that caveat before citing these numbers anywhere.**
+   against `mock_agent_step`) is `baselines/run_stage2_eval.py`; **this
+   is a plumbing sanity check, not the real result** — `mock_agent_step`
+   isn't drawn from the same generative model EFE/VOI assume, so it
+   doesn't repeat Stage 0.5's Bayes-optimality methodology. Read
+   `docs/stage2-baselines-results.md` Part 1 for that caveat in full.
 
    The router's belief-state-parity fix the kill-test flagged is
    applied (features are (belief bucket, observation), not just the
@@ -129,17 +129,41 @@ heuristic thresholds. Full thesis plan: `RESEARCH_PLAN.md`.
    `escalate_to_human` at the same observation, so the router never
    learned to prefer escalating specifically. Both fixed in
    `belief.step_reward` (terminal-only real payoff + a ground-truth-
-   keyed outcome adjustment, using the same `forced-bad` task-id
-   convention `mock_agent_step` already had). If you build a Stage 3
-   reward function, check whether either failure mode applies there too.
+   keyed outcome adjustment). If you build a Stage 3 reward function,
+   check whether either failure mode applies there too.
+
+8. **`baselines/model_env.py` + `run_model_matched_eval.py`** — closes
+   the Part-1 gap: a simulator that samples the true `task_state` from
+   `efe_controller.D_PRIOR`, observations from `OBS_DISTS[true_state]`,
+   and transitions via `B_TRANSITIONS[policy][true_state]` — i.e. the
+   real analogue of `kill_test/env.py`, treating EFE's own generative
+   model as ground truth for the eval. `router.py`'s `train()` was
+   refactored to take a pluggable `source_factory` so the router trains
+   against this same environment (`model_matched_source_factory`), not
+   just the mismatched mock. **This is the result to actually cite** —
+   full table and analysis in `docs/stage2-baselines-results.md` Part 2.
+
+   **Read this before assuming Stage 0.5's "EFE ≈ VOI" finding still
+   holds:** it doesn't, at this scale. EFE has the best correct-
+   escalation rate (0.951) but the lowest reward/throughput; VOI has the
+   best precision (0.002 unnecessary-escalation) and beats EFE on
+   reward. They trade off differently, not identically, at the real
+   4-state/6-policy scale. Also: the learned router, even fully
+   belief-parity-fixed and trained for 100k episodes, has the *worst*
+   correct-escalation rate (0.255) of the five despite the *highest*
+   reward — a distinct, reward-maximizing-under-class-imbalance failure
+   mode (genuinely unresolvable tasks are a training-distribution
+   minority), not a belief-access problem. Don't conflate the two if
+   you're deciding whether the router needs more training or a
+   different reward design.
 
 ## What's NOT done
 
-With Stage 1c and Stage 2 done, the next piece of work is wiring a real
-OPA (Open Policy Agent) instance for the `policy_gate` observation
-modality — it's hardcoded to `allow` in `mock_agent_step`,
-`llm_agent_step`, and all four Stage 2 baselines. After that, Stage 3
-(real τ²-bench/HiL-Bench integration) is the next unstarted stage.
+With Stage 1c and Stage 2 (both the mock-based and model-matched
+comparisons) done, the next piece of work is wiring a real OPA (Open
+Policy Agent) instance for the `policy_gate` observation modality —
+it's hardcoded to `allow` everywhere. After that, Stage 3 (real
+τ²-bench/HiL-Bench integration) is the next unstarted stage.
 
 Full breakdown of what's done vs. not-started: `context/TODOS.md`.
 
@@ -156,15 +180,16 @@ that's the next concrete task (above).
 
 ```bash
 python3 -m venv .venv && .venv/bin/pip install -e .
-.venv/bin/python scripts/tmaze_sanity_check.py                 # Stage 0
-.venv/bin/python -m aif_orchestrator.kill_test.run_kill_test    # Stage 0.5 (~2 min)
-.venv/bin/python -m aif_orchestrator.graph                      # Stage 1 (mock agent)
-.venv/bin/python -m aif_orchestrator.graph --llm                 # Stage 1c (real LLM, needs .env)
-.venv/bin/python -m aif_orchestrator.graph --stage2               # Stage 2, all 5 controllers in the real graph
-.venv/bin/python -m aif_orchestrator.baselines.run_stage2_eval    # Stage 2 statistical comparison (~5 min)
+.venv/bin/python scripts/tmaze_sanity_check.py                        # Stage 0
+.venv/bin/python -m aif_orchestrator.kill_test.run_kill_test           # Stage 0.5 (~2 min)
+.venv/bin/python -m aif_orchestrator.graph                             # Stage 1 (mock agent)
+.venv/bin/python -m aif_orchestrator.graph --llm                        # Stage 1c (real LLM, needs .env)
+.venv/bin/python -m aif_orchestrator.graph --stage2                      # Stage 2, all 5 controllers in the real graph
+.venv/bin/python -m aif_orchestrator.baselines.run_stage2_eval           # Stage 2 Part 1: mock-based (~5 min)
+.venv/bin/python -m aif_orchestrator.baselines.run_model_matched_eval    # Stage 2 Part 2: model-matched, the real result (~5 min)
 ```
 
-All six should run clean and reproduce the numbers/behavior described
+All seven should run clean and reproduce the numbers/behavior described
 above and in `RESEARCH_PLAN.md`. `--llm` needs `LLM_API_KEY` /
 `LLM_MODEL` / `LLM_BASE_URL` set in `.env` at the repo root; the rest
 need no credentials.

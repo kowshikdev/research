@@ -1,0 +1,65 @@
+{
+  "num_eval_episodes": 3000,
+  "results": {
+    "heuristic": {
+      "n_episodes": 3000,
+      "avg_reward": 2.998866666666667,
+      "reward_ci95_halfwidth": 0.08052364398165224,
+      "n_unresolvable_final_state": 386,
+      "correct_escalation_rate": 0.9145077720207254,
+      "unnecessary_escalation_rate": 0.06694720734506504,
+      "resolvable_resolved_rate": 0.9238714613618975,
+      "forced_stop_rate": 0.01633333333333333,
+      "avg_steps": 1.6713333333333333,
+      "wall_time_sec": 0.06733536720275879
+    },
+    "learned_router": {
+      "n_episodes": 3000,
+      "avg_reward": 3.3933666666666666,
+      "reward_ci95_halfwidth": 0.06676433424198132,
+      "n_unresolvable_final_state": 263,
+      "correct_escalation_rate": 0.25475285171102663,
+      "unnecessary_escalation_rate": 0.009499451954694921,
+      "resolvable_resolved_rate": 0.9674826452320059,
+      "forced_stop_rate": 0.075,
+      "avg_steps": 1.9706666666666666,
+      "wall_time_sec": 0.08495831489562988
+    },
+    "voi_decision_theoretic": {
+      "n_episodes": 3000,
+      "avg_reward": 3.1421333333333332,
+      "reward_ci95_halfwidth": 0.06978443331953357,
+      "n_unresolvable_final_state": 282,
+      "correct_escalation_rate": 0.7659574468085106,
+      "unnecessary_escalation_rate": 0.002207505518763797,
+      "resolvable_resolved_rate": 0.8914643119941134,
+      "forced_stop_rate": 0.11466666666666667,
+      "avg_steps": 2.203,
+      "wall_time_sec": 93.39971017837524
+    },
+    "react": {
+      "n_episodes": 3000,
+      "avg_reward": 3.183,
+      "reward_ci95_halfwidth": 0.07795320375051581,
+      "n_unresolvable_final_state": 378,
+      "correct_escalation_rate": 0.0,
+      "unnecessary_escalation_rate": 0.0,
+      "resolvable_resolved_rate": 0.9832189168573608,
+      "forced_stop_rate": 0.11266666666666666,
+      "avg_steps": 2.0126666666666666,
+      "wall_time_sec": 0.12199115753173828
+    },
+    "efe_active_inference": {
+      "n_episodes": 3000,
+      "avg_reward": 2.8042000000000002,
+      "reward_ci95_halfwidth": 0.08078266085230798,
+      "n_unresolvable_final_state": 385,
+      "correct_escalation_rate": 0.9506493506493506,
+      "unnecessary_escalation_rate": 0.061950286806883366,
+      "resolvable_resolved_rate": 0.860038240917782,
+      "forced_stop_rate": 0.07266666666666667,
+      "avg_steps": 1.873,
+      "wall_time_sec": 61.37903952598572
+    }
+  }
+}

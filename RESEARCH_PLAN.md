@@ -7,10 +7,13 @@ and the real tool-calling LLM agent step (Stage 1c,
 `src/aif_orchestrator/llm_agent.py`) are built and verified end-to-end.
 Stage 2's four baselines (heuristic/learned_router/VOI/ReAct,
 `src/aif_orchestrator/baselines/`) are ported to the real decision-POMDP
-and pluggable into the same LangGraph scaffold — see
-[`docs/stage2-baselines-results.md`](docs/stage2-baselines-results.md)
-for results and an important caveat on what this comparison does and
-doesn't establish. See [`context/HANDOFF.md`](context/HANDOFF.md) and
+and pluggable into the same LangGraph scaffold, evaluated both against a
+mock stand-in (plumbing check) and against a model-matched simulator
+(`model_env.py`, the genuine repeat of Stage 0.5's methodology at real
+scale) — see [`docs/stage2-baselines-results.md`](docs/stage2-baselines-results.md)
+Part 2 for the real result: **EFE and VOI diverge here, unlike at
+Stage 0.5's toy scale** — EFE wins on escalation recall, VOI on
+precision and reward. See [`context/HANDOFF.md`](context/HANDOFF.md) and
 [`context/TODOS.md`](context/TODOS.md) for exactly what's done and
 what's next (OPA `policy_gate` wiring, then Stage 3).
 
@@ -194,7 +197,12 @@ not about who has more information.
 - **Caveat carried into Stage 2:** the router here is memory-limited
   (features = latest observation + step count, not a running belief) —
   some of its gap is plausibly a feature-parity issue. Fix before this
-  finding is reported at benchmark scale (§3.6 baseline #2).
+  finding is reported at benchmark scale (§3.6 baseline #2). **Resolved
+  in Stage 2** (belief-state-parity fix, `baselines/router.py`) — but the
+  parity fix alone did not make the router well-calibrated; it revealed
+  a *different* weakness instead (reward-maximizing training under class
+  imbalance under-catches rare escalation-worthy cases) — see
+  `docs/stage2-baselines-results.md` Part 2.
 
 **Decision:** proceed to Stage 1.
 
@@ -237,10 +245,19 @@ not about who has more information.
 - [x] Deliverable met: all five conditions (incl. EFE) runnable via CLI
   (`python -m aif_orchestrator.graph --stage2` for the LangGraph-wired
   demo; `python -m aif_orchestrator.baselines.run_stage2_eval` for the
-  3000-episode statistical comparison) — results and an important
-  caveat on what this comparison does and doesn't establish (it's not a
-  repeat of Stage 0.5's model-matched Bayes-optimality test) in
-  [`docs/stage2-baselines-results.md`](docs/stage2-baselines-results.md).
+  3000-episode mock-based statistical comparison).
+- [x] **Model-matched comparison** (`model_env.py`,
+  `run_model_matched_eval.py`) — the genuine repeat of Stage 0.5's
+  Bayes-optimality methodology at real scale, closing the gap the
+  mock-based comparison left open. **Result: EFE and VOI diverge here**
+  (EFE best on escalation recall, worst on reward/throughput; VOI best
+  on precision, better reward than EFE) — unlike Stage 0.5's toy model,
+  where they were statistically indistinguishable. The learned router
+  (belief-parity fixed, 100k training episodes) has the highest reward
+  but the worst escalation recall — a distinct, class-imbalance-driven
+  training weakness, not a belief-access problem. Full results and
+  analysis: [`docs/stage2-baselines-results.md`](docs/stage2-baselines-results.md)
+  Part 2 — cite this over Part 1's mock-based numbers.
 - VOI's implementation diverges from this section's original sketch
   ("LLM-estimated P(success|context)") — see `context/TODOS.md` for why
   and what would still motivate building that version at Stage 3.
@@ -303,9 +320,12 @@ plan still holds as of September 2026.
 
 ## 7. Next action
 
-Stage 0 through Stage 2 are all complete (Stage 1c's real LLM agent
-step; Stage 2's four baselines against the real decision-POMDP). Next:
-wire a real OPA instance for the `policy_gate` observation (currently
-hardcoded `allow`), then start Stage 3 (real τ²-bench/HiL-Bench
-integration — the first stage that needs external benchmark repos and a
-real API budget, not just the credentials already configured).
+Stage 0 through Stage 2 are all complete, including the model-matched
+comparison that closes the Stage 0.5-parity gap Stage 2's first pass
+left open (`docs/stage2-baselines-results.md` Part 2: EFE and VOI
+diverge at real scale — EFE wins on escalation recall, VOI on precision
+and reward). Next: wire a real OPA instance for the `policy_gate`
+observation (currently hardcoded `allow`), then start Stage 3 (real
+τ²-bench/HiL-Bench integration — the first stage that needs external
+benchmark repos and a real API budget, not just the credentials already
+configured).
