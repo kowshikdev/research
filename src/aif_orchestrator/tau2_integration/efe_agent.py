@@ -1,7 +1,8 @@
-"""Stage 3: EFE control node wrapping a real tool-calling LLM agent
-inside tau2-bench (external/tau2-bench, pinned at a2c0247 / v1.0.1),
-plugged in the same way llm_agent.py wraps the order-lookup demo -- see
-docs/decision-pomdp.md and context/TODOS.md.
+"""Stage 3: any control node (EFE, or one of the Stage 2 baselines)
+wrapping a real tool-calling LLM agent inside tau2-bench
+(external/tau2-bench, pinned at a2c0247 / v1.0.1), plugged in the same
+way llm_agent.py wraps the order-lookup demo -- see docs/decision-pomdp.md
+and context/TODOS.md.
 
 tau2's turn-based contract (`HalfDuplexAgent.generate_next_message`,
 src/tau2/agent/README.md) splits generation and tool execution across
@@ -15,12 +16,21 @@ after a tool call resolves.
 
 `escalate_to_human` is not just a steering hint here, unlike the other
 five policies -- every core domain (mock, retail, airline, telecom) has
-a real `transfer_to_human_agents(summary)` tool, so EFE choosing that
+a real `transfer_to_human_agents(summary)` tool, so choosing that
 policy makes the agent genuinely call it, a real, benchmark-scored
 action (tau2's evaluation criteria can check whether transfer was the
 correct/incorrect call for a task) -- this is the first point in the
 project where "escalate" is graded by an external benchmark rather than
 just pausing a LangGraph demo.
+
+`ControlNodeAgent` is generic over which controller drives the decision
+-- Stage 2's five controllers (EFEControlNode + the four baselines in
+baselines/) all share the same `__init__(prior=None)` /
+`decide(observation, valid_policies=None) -> Decision` /
+`reset(prior=None)` interface, so the same tau2 agent wrapper works for
+all of them (baseline_agents.py registers factories for the other
+four); only EFEAgent's factory/name are kept here for backward
+compatibility with the Stage 3 smoke test.
 """
 from typing import Generic, Optional, TypeVar
 
@@ -64,7 +74,7 @@ SYSTEM_PROMPT = """
 
 TRANSFER_TOOL_NAME = "transfer_to_human_agents"
 
-# Mirrors llm_agent.POLICY_STEER -- EFE's chosen policy has to actually
+# Mirrors llm_agent.POLICY_STEER -- the chosen policy has to actually
 # change what the agent does next turn, or a non-terminal policy just
 # re-prompts against unchanged context and the model repeats itself.
 # Injected as an EPHEMERAL extra system message for this turn's
@@ -82,7 +92,7 @@ POLICY_STEER = {
 }
 
 
-class EFEAgentState(BaseModel):
+class ControlNodeAgentState(BaseModel):
     system_messages: list[SystemMessage]
     messages: list[APICompatibleMessage]
     belief: list[float]
@@ -90,17 +100,21 @@ class EFEAgentState(BaseModel):
     decision_trace: list[dict] = []
 
 
-EFEAgentStateType = TypeVar("EFEAgentStateType", bound="EFEAgentState")
+ControlNodeAgentStateType = TypeVar("ControlNodeAgentStateType", bound="ControlNodeAgentState")
 
 
 def _tool_call_key(name: str, arguments: dict) -> tuple:
     return (name, tuple(sorted(arguments.items())))
 
 
-class EFEAgent(LLMConfigMixin, HalfDuplexAgent[EFEAgentStateType], Generic[EFEAgentStateType]):
+class ControlNodeAgent(
+    LLMConfigMixin, HalfDuplexAgent[ControlNodeAgentStateType], Generic[ControlNodeAgentStateType]
+):
     """Half-duplex tau2 agent whose turn-to-turn control (continue / retry
     / call_tool / gather_info / escalate_to_human / hand_off_to_agent) is
-    chosen by EFEControlNode instead of being left entirely to the LLM."""
+    chosen by `control_node_cls` instead of being left entirely to the LLM."""
+
+    control_node_cls = EFEControlNode  # overridden by baseline_agents.py subclasses
 
     def __init__(self, tools: list[Tool], domain_policy: str, llm: str, llm_args: Optional[dict] = None):
         super().__init__(tools=tools, domain_policy=domain_policy, llm=llm, llm_args=llm_args)
@@ -110,14 +124,14 @@ class EFEAgent(LLMConfigMixin, HalfDuplexAgent[EFEAgentStateType], Generic[EFEAg
     def system_prompt(self) -> str:
         return SYSTEM_PROMPT.format(domain_policy=self.domain_policy, agent_instruction=AGENT_INSTRUCTION)
 
-    def get_init_state(self, message_history: Optional[list[Message]] = None) -> EFEAgentStateType:
-        return EFEAgentState(
+    def get_init_state(self, message_history: Optional[list[Message]] = None) -> ControlNodeAgentStateType:
+        return ControlNodeAgentState(
             system_messages=[SystemMessage(role="system", content=self.system_prompt)],
             messages=message_history or [],
             belief=list(D_PRIOR),
         )
 
-    def _derive_observation(self, incoming: ValidAgentInputMessage, state: EFEAgentStateType) -> Observation:
+    def _derive_observation(self, incoming: ValidAgentInputMessage, state: ControlNodeAgentStateType) -> Observation:
         if isinstance(incoming, (ToolMessage, MultiToolMessage)):
             tool_messages = incoming.tool_messages if isinstance(incoming, MultiToolMessage) else [incoming]
             had_error = any(m.error for m in tool_messages)
@@ -141,7 +155,7 @@ class EFEAgent(LLMConfigMixin, HalfDuplexAgent[EFEAgentStateType], Generic[EFEAg
             policy_gate=policy_gate, retrieval_quality=retrieval_quality,
         )
 
-    def _count_repeated_last_call(self, state: EFEAgentStateType) -> int:
+    def _count_repeated_last_call(self, state: ControlNodeAgentStateType) -> int:
         last_call = None
         for m in reversed(state.messages):
             if isinstance(m, AssistantMessage) and m.is_tool_call():
@@ -158,7 +172,7 @@ class EFEAgent(LLMConfigMixin, HalfDuplexAgent[EFEAgentStateType], Generic[EFEAg
                         count += 1
         return count
 
-    def _derive_confidence(self, state: EFEAgentStateType) -> str:
+    def _derive_confidence(self, state: ControlNodeAgentStateType) -> str:
         transcript = "\n".join(
             f"{getattr(m, 'role', type(m).__name__)}: {getattr(m, 'content', None) or getattr(m, 'tool_calls', None)}"
             for m in state.messages[-4:]
@@ -175,7 +189,7 @@ class EFEAgent(LLMConfigMixin, HalfDuplexAgent[EFEAgentStateType], Generic[EFEAg
                 ),
                 UserMessage.text(content=transcript or "(no transcript yet)"),
             ],
-            call_name="efe_confidence",
+            call_name="control_node_confidence",
             max_tokens=150,
             extra_body={"reasoning": {"max_tokens": 100}},
         )
@@ -186,8 +200,29 @@ class EFEAgent(LLMConfigMixin, HalfDuplexAgent[EFEAgentStateType], Generic[EFEAg
         return "medium"
 
     def generate_next_message(
-        self, message: ValidAgentInputMessage, state: EFEAgentStateType
-    ) -> tuple[AssistantMessage, EFEAgentStateType]:
+        self, message: ValidAgentInputMessage, state: ControlNodeAgentStateType
+    ) -> tuple[AssistantMessage, ControlNodeAgentStateType]:
+        # Turn 0 (the opening customer message, before the agent has done
+        # anything): there's no real signal to reason about yet, and
+        # _derive_observation would return tool_result="no_tool_called"
+        # -- which the model treats as evidence FOR needs_human (0.50
+        # probability in TOOL_RESULT_DIST), not "nothing has happened
+        # yet". That misread the very first turn as already-stuck and
+        # escalated immediately (verified: a real run against tau2's
+        # mock domain did exactly this). mock_agent_step avoids the same
+        # trap with its own turn==0 special case; here the fix is to
+        # skip the control loop on a genuinely empty conversation and
+        # just let the agent take its first natural action.
+        if not state.messages and isinstance(message, UserMessage):
+            state.messages.append(message)
+            assistant_message = generate(
+                model=self.llm, tools=self.tools, messages=state.system_messages + state.messages,
+                call_name="control_node_agent_first_turn", max_tokens=600,
+                extra_body={"reasoning": {"max_tokens": 300}},
+            )
+            state.messages.append(assistant_message)
+            return assistant_message, state
+
         observation = self._derive_observation(message, state)
 
         if isinstance(message, MultiToolMessage):
@@ -195,7 +230,7 @@ class EFEAgent(LLMConfigMixin, HalfDuplexAgent[EFEAgentStateType], Generic[EFEAg
         else:
             state.messages.append(message)
 
-        node = EFEControlNode(prior=state.belief)
+        node = self.control_node_cls(prior=state.belief)
         decision = node.decide(observation)
         state.belief = list(decision.belief.values())
         state.decision_trace.append({
@@ -217,7 +252,7 @@ class EFEAgent(LLMConfigMixin, HalfDuplexAgent[EFEAgentStateType], Generic[EFEAg
                 messages = messages + [SystemMessage(role="system", content=steer)]
             assistant_message = generate(
                 model=self.llm, tools=self.tools, messages=messages,
-                call_name="efe_agent_response", max_tokens=600,
+                call_name="control_node_agent_response", max_tokens=600,
                 extra_body={"reasoning": {"max_tokens": 300}},
             )
 
@@ -225,11 +260,15 @@ class EFEAgent(LLMConfigMixin, HalfDuplexAgent[EFEAgentStateType], Generic[EFEAg
         state.last_policy = decision.policy
         return assistant_message, state
 
-    def _build_transfer_summary(self, state: EFEAgentStateType) -> str:
+    def _build_transfer_summary(self, state: ControlNodeAgentStateType) -> str:
         for m in reversed(state.messages):
             if isinstance(m, UserMessage) and m.content:
-                return f"Escalating per EFE control node: {m.content[:200]}"
-        return "Escalating per EFE control node: unable to resolve automatically."
+                return f"Escalating per {self.control_node_cls.__name__}: {m.content[:200]}"
+        return f"Escalating per {self.control_node_cls.__name__}: unable to resolve automatically."
+
+
+class EFEAgent(ControlNodeAgent[ControlNodeAgentStateType], Generic[ControlNodeAgentStateType]):
+    control_node_cls = EFEControlNode
 
 
 def create_efe_agent(tools, domain_policy, **kwargs):
