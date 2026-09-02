@@ -1,9 +1,12 @@
 # Handoff — read this first
 
-This session (cloud, no API keys) got as far as it could go without LLM
-API credentials. This file plus `context/TODOS.md` should let a fresh
-session (yours, local, with API keys attached) resume without
-re-deriving anything. Everything referenced below is committed to
+**Update:** Stage 1c (the real tool-calling LLM agent step) is now done
+— see the new item 6 below and `context/TODOS.md`. The rest of this file
+is the original cloud-session handoff (kept for history); read item 6
+first, then the rest for background on what it builds on.
+
+This file plus `context/TODOS.md` should let a fresh session resume
+without re-deriving anything. Everything referenced below is committed to
 `claude/active-inference-llm-orchestration-1vt5po`.
 
 ## The project, in one paragraph
@@ -60,19 +63,47 @@ heuristic thresholds. Full thesis plan: `RESEARCH_PLAN.md`.
    GenAI span instrumentation (see TODOs) but the actual data being
    logged is already what Stage 5's interpretability analysis needs.
 
-## What's NOT done, and why this session stopped here
+6. **`src/aif_orchestrator/llm_agent.py`** — the real tool-calling LLM
+   agent step (Stage 1c), wired in as `graph.py`'s `llm_agent_step`.
+   Talks to an OpenAI-compatible endpoint (OpenRouter by default; reads
+   `LLM_API_KEY`/`LLM_MODEL`/`LLM_BASE_URL` from `.env` via
+   `python-dotenv`, both now in `pyproject.toml`). A fixed, deterministic
+   `lookup_order` tool stands in for a real backend (the LLM's decisions
+   about whether/how to call it are real, not scripted — same role a
+   benchmark harness environment plays). `confidence` is derived via a
+   separate verifier-prompt call (the cheaper of the two options this
+   file originally flagged, vs. self-consistency sampling). `policy_gate`
+   is still hardcoded `allow` — OPA wiring is unchanged, still a TODO.
+   EFE's chosen policy is fed back into the next turn as a steering
+   message (`llm_agent.POLICY_STEER`) — without this, a non-terminal
+   policy like `gather_info` just re-asked the model the same question
+   against unchanged messages and it repeated itself for `max_turns`.
+   Verified end-to-end: `.venv/Scripts/python -m aif_orchestrator.graph --llm`
+   — order 1001 (exists) resolves to `continue` in one turn; order 9999
+   (doesn't exist) genuinely escalates and pauses via `interrupt()`, same
+   as the mock demo's Task B.
 
-The next piece of work is: **replace `mock_agent_step()` in `graph.py`
-with a real tool-calling LLM agent step.** That needs LLM API credentials
-this cloud environment doesn't have (checked: no `ANTHROPIC_API_KEY` /
-`OPENAI_API_KEY`, only `ANTHROPIC_BASE_URL` which is Claude Code's own
-internal routing, not something reusable for an independent agent's API
-calls). Per your instruction, this session stopped here rather than
-guessing at credentials or building further speculative scaffolding
-around an untested integration point.
+   **Gotcha for whoever touches the model config next:** this session's
+   `.env` initially pointed at `stealth/ox-alpha` on OpenRouter, which
+   was retired mid-session (404, redirected to `z-ai/glm-5.3-flash`).
+   That model makes reasoning mandatory — `reasoning: {enabled: false}`
+   is rejected with a 400 — and without a cap it burns the entire
+   `max_tokens` budget on hidden reasoning tokens, returning empty
+   `content` and making every call slow. Fixed by passing
+   `extra_body={"reasoning": {"max_tokens": N}}` plus a larger overall
+   `max_tokens` on every call in `llm_agent.py`. If the model changes
+   again, check whether this still applies before assuming a hang is a
+   network issue.
 
-Full breakdown of what's done vs. blocked vs. not-started:
-`context/TODOS.md`.
+## What's NOT done
+
+With Stage 1c done, the next piece of work is wiring a real OPA (Open
+Policy Agent) instance for the `policy_gate` observation modality — it's
+hardcoded to `allow` in both `mock_agent_step` and `llm_agent_step`.
+After that, Stage 2 (heuristic/router/VOI/ReAct baselines against the
+same LangGraph scaffold) is the next unstarted stage.
+
+Full breakdown of what's done vs. not-started: `context/TODOS.md`.
 
 ## Two things worth deciding early when you resume
 
@@ -96,8 +127,10 @@ Full breakdown of what's done vs. blocked vs. not-started:
 python3 -m venv .venv && .venv/bin/pip install -e .
 .venv/bin/python scripts/tmaze_sanity_check.py              # Stage 0
 .venv/bin/python -m aif_orchestrator.kill_test.run_kill_test # Stage 0.5 (~2 min)
-.venv/bin/python -m aif_orchestrator.graph                   # Stage 1
+.venv/bin/python -m aif_orchestrator.graph                   # Stage 1 (mock agent)
+.venv/bin/python -m aif_orchestrator.graph --llm              # Stage 1c (real LLM, needs .env)
 ```
 
-All three should run clean and reproduce the numbers/behavior described
-above and in `RESEARCH_PLAN.md`.
+All four should run clean and reproduce the numbers/behavior described
+above and in `RESEARCH_PLAN.md`. The last one needs `LLM_API_KEY` /
+`LLM_MODEL` / `LLM_BASE_URL` set in `.env` at the repo root.

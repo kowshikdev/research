@@ -36,6 +36,8 @@ class OrchestratorState(TypedDict, total=False):
     done: bool
     human_feedback: str
     decision_trace: list        # accumulated per-turn decision records for this task
+    task_prompt: str            # real-agent only: the user task seeding the conversation
+    messages: list               # real-agent only: chat history carried across turns
 
 
 def mock_agent_step(state: OrchestratorState) -> OrchestratorState:
@@ -65,6 +67,20 @@ def mock_agent_step(state: OrchestratorState) -> OrchestratorState:
         obs = dict(tool_result="success", confidence="high", policy_gate="allow", retrieval_quality="n/a")
 
     return {"observation": obs}
+
+
+def llm_agent_step(state: OrchestratorState) -> OrchestratorState:
+    """Real tool-calling LLM agent step -- Stage 1c. Same contract as
+    mock_agent_step (returns an `observation` dict), plus persists chat
+    history across turns via `messages`."""
+    from .llm_agent import POLICY_STEER, real_agent_step, seed_messages
+
+    messages = state.get("messages") or seed_messages(state["task_prompt"])
+    steer = POLICY_STEER.get(state.get("last_policy"))
+    if steer:
+        messages = messages + [{"role": "user", "content": steer}]
+    messages, observation = real_agent_step(messages)
+    return {"observation": observation, "messages": messages}
 
 
 def efe_control_step(state: OrchestratorState) -> OrchestratorState:
@@ -128,9 +144,9 @@ def increment_turn(state: OrchestratorState) -> OrchestratorState:
     return {"turn": state["turn"] + 1}
 
 
-def build_graph():
+def build_graph(agent_step=mock_agent_step):
     graph = StateGraph(OrchestratorState)
-    graph.add_node("agent_step", mock_agent_step)
+    graph.add_node("agent_step", agent_step)
     graph.add_node("efe_control", efe_control_step)
     graph.add_node("human_review", human_review_node)
     graph.add_node("finish", finish_node)
@@ -188,5 +204,61 @@ def run_demo():
     print(f"\nFull decision log: {DECISION_LOG_PATH}")
 
 
+def run_llm_demo():
+    """Same shape as run_demo() but with a real tool-calling LLM agent
+    step instead of the mock -- Stage 1c."""
+    app = build_graph(agent_step=llm_agent_step)
+
+    print("=== Task A (real LLM): order that exists, should resolve cleanly ===")
+    config_a = {"configurable": {"thread_id": "llm-task-A"}}
+    result_a = app.invoke(
+        {
+            "task_id": "llm-task-A",
+            "task_prompt": "What's the status of order 1001?",
+            "turn": 0,
+            "max_turns": 5,
+            "decision_trace": [],
+        },
+        config=config_a,
+    )
+    for rec in result_a["decision_trace"]:
+        print(f"  turn {rec['turn']}: obs={rec['observation']} -> {rec['chosen_policy']}")
+    print(f"  final belief: {result_a['belief']}")
+    print(f"  done={result_a.get('done', False)}")
+    print()
+
+    print("=== Task B (real LLM): nonexistent order, expect escalation ===")
+    config_b = {"configurable": {"thread_id": "llm-task-B"}}
+    result_b = app.invoke(
+        {
+            "task_id": "llm-task-B",
+            "task_prompt": "What's the status of order 9999?",
+            "turn": 0,
+            "max_turns": 5,
+            "decision_trace": [],
+        },
+        config=config_b,
+    )
+    for rec in result_b["decision_trace"]:
+        print(f"  turn {rec['turn']}: obs={rec['observation']} -> {rec['chosen_policy']}")
+
+    state_b = app.get_state(config_b)
+    if state_b.next:
+        print("  GRAPH PAUSED (interrupt) -- awaiting human review.")
+        print(f"  interrupt payload: {state_b.tasks[0].interrupts[0].value}")
+        print("  Resuming with human feedback...")
+        result_b_resumed = app.invoke(Command(resume="Approved: order not found, ask customer to double-check the ID."), config=config_b)
+        print(f"  resumed state: done={result_b_resumed.get('done')}, human_feedback={result_b_resumed.get('human_feedback')!r}")
+    else:
+        print(f"  done={result_b.get('done', False)} (did not escalate this run)")
+
+    print(f"\nFull decision log: {DECISION_LOG_PATH}")
+
+
 if __name__ == "__main__":
-    run_demo()
+    import sys
+
+    if "--llm" in sys.argv:
+        run_llm_demo()
+    else:
+        run_demo()

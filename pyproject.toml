@@ -10,6 +10,8 @@ dependencies = [
     # imports as `import pymdp`.
     "inferactively-pymdp",
     "langgraph",
+    "openai",
+    "python-dotenv",
 ]
 
 [build-system]

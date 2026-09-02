@@ -1,13 +1,13 @@
 # Active Inference & Predictive-Coding Control for Grounded LLM Multi-Agent Orchestration
 
-Research/thesis plan. Status: **Stage 1 partially complete, blocked on
-API credentials.** Stage 0.5 kill-test done (positive result, §4a). Stage
-1's EFE control node and LangGraph wiring (incl. the `escalate_to_human`
-→ `interrupt()` pause) are built and proven with a mock agent — see
+Research/thesis plan. Status: **Stage 1 complete.** Stage 0.5 kill-test
+done (positive result, §4a). Stage 1's EFE control node, LangGraph wiring
+(incl. the `escalate_to_human` → `interrupt()` pause), and the real
+tool-calling LLM agent step (Stage 1c, `src/aif_orchestrator/llm_agent.py`)
+are all built and verified end-to-end — see
 [`context/HANDOFF.md`](context/HANDOFF.md) and
-[`context/TODOS.md`](context/TODOS.md) for exactly what's done vs.
-blocked and how to resume. The next step (swap the mock agent for a real
-tool-calling LLM) needs LLM API credentials this environment doesn't have.
+[`context/TODOS.md`](context/TODOS.md) for exactly what's done and what's
+next (OPA `policy_gate` wiring, then Stage 2 baselines).
 
 ## 1. Thesis statement
 
@@ -193,7 +193,7 @@ not about who has more information.
 
 **Decision:** proceed to Stage 1.
 
-### Stage 1 — EFE control node (weeks 3–6) — partially complete, blocked
+### Stage 1 — EFE control node (weeks 3–6) — complete
 
 - [x] EFE control node implementing the real decision-POMDP (4 states, 4
   observation modalities, 6 policies) — `src/aif_orchestrator/efe_controller.py`.
@@ -207,14 +207,18 @@ not about who has more information.
 - [x] Per-decision epistemic/pragmatic value logging — currently plain
   JSONL (`results/stage1_decision_log.jsonl`), not yet real OTel GenAI
   spans (needs an actual collector/backend — infra decision, not just code).
-- [ ] **Blocked:** swap the mock agent step for a real tool-calling LLM
-  agent — needs LLM API credentials not present in this environment.
-  See `context/TODOS.md` for the exact next steps.
+- [x] Real tool-calling LLM agent step (Stage 1c) — `src/aif_orchestrator/llm_agent.py`,
+  wired in as `graph.py`'s `llm_agent_step`. Confidence derived via a
+  verifier-prompt call; EFE's chosen policy is fed back as a steering
+  message so non-terminal policies actually change the agent's next
+  action. Verified end-to-end (`python -m aif_orchestrator.graph --llm`):
+  a resolvable order converges to `continue` in one turn, an unresolvable
+  one genuinely escalates and pauses via `interrupt()`.
 - [ ] Not started: real OPA instance for the `policy_gate` observation
-  (mock currently hardcodes `allow`); real confidence derivation
-  (self-consistency sampling or a verifier prompt).
+  (still hardcoded `allow`, in both the mock and real agent steps).
 - Original deliverable (EFE node on real τ²-bench tasks with real
-  epistemic/pragmatic logs) still pending the above.
+  epistemic/pragmatic logs) still pending Stage 2/3 — this stage proved
+  the control-loop plumbing works with a real LLM, not benchmark results.
 
 ### Stage 2 — Baselines (weeks 5–7, parallel with Stage 1 tail)
 - Implement heuristic-threshold, learned-router, and ReAct baselines against
@@ -280,8 +284,9 @@ plan still holds as of September 2026.
 
 ## 7. Next action
 
-Stage 0 (decision-POMDP schema + pymdp engine sanity check) and Stage 0.5
-(kill-test, positive result) are both complete. Next: Stage 1 — build the
-EFE control node as an actual LangGraph node, wired to real observation
-signals (tool output, confidence, OPA verdict) instead of the kill-test's
-synthetic ones, with `escalate_to_human` routed to `interrupt()`.
+Stage 0, Stage 0.5, and Stage 1 (including the real tool-calling LLM
+agent step, Stage 1c) are all complete. Next: wire a real OPA instance
+for the `policy_gate` observation (currently hardcoded `allow`), then
+start Stage 2 baselines (heuristic, learned router with belief-state
+parity, VOI/decision-theoretic, ReAct) against the same LangGraph
+scaffold.
