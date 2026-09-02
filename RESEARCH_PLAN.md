@@ -53,11 +53,13 @@ tractable (classical AIF is exponential in horizon × state-space size).
 
 - **LangGraph** — `interrupt()` + checkpointer (e.g. `MemorySaver` or a
   persistent backend) for pausing on `escalate_to_human`; this is the
-  first-class, currently-maintained HITL primitive (confirmed against
-  current LangChain docs) — wire the EFE control node's `escalate` policy
-  directly to it.
-- **LangRun** — existing checkpointer-based human REVIEW pause (already in
-  the user's stack per the plan) — reuse rather than rebuild.
+  first-class, currently-maintained, industry-standard HITL primitive
+  (confirmed against current LangChain docs) — wire the EFE control node's
+  `escalate` policy directly to it. **LangRun is dropped** from this plan —
+  it's not an industry-standard tool and hasn't been fully tested; use
+  LangGraph's own checkpointer/interrupt mechanism as the single HITL
+  pause point instead of layering a second, less-proven review system on
+  top.
 - **OPA (Open Policy Agent)** policy gate verdicts — feed into the
   decision-POMDP as an observation modality.
 - **OpenTelemetry GenAI semantic conventions** — `gen_ai.agent` /
@@ -121,8 +123,8 @@ tractable (classical AIF is exponential in horizon × state-space size).
 - Implement the EFE control node as a LangGraph node: maps
   {tool output, confidence signal, OPA verdict, retrieval-quality} →
   observations → belief update → EFE over the 6 policies → action.
-- Wire `escalate_to_human` to the existing LangRun/LangGraph checkpointer
-  pause.
+- Wire `escalate_to_human` to LangGraph's own `interrupt()` + checkpointer
+  pause (no LangRun dependency).
 - Instrument every decision via OTel GenAI spans, logging the epistemic and
   pragmatic value components separately (cheap now, expensive to
   retrofit — do this from day one).
@@ -163,7 +165,7 @@ tractable (classical AIF is exponential in horizon × state-space size).
   foundations → computational instantiations → LLM agents/orchestration →
   convergence frontier → gap statement).
 - Methods, results, ablations, limitations, threats to validity.
-- Open-source the reference implementation on top of LangGraph/LangRun.
+- Open-source the reference implementation on top of LangGraph.
 
 ## 5. Risks / pivot triggers (carried over, still current)
 
