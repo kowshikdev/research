@@ -51,7 +51,7 @@ def run_one(domain: str, agent: str, model: str, num_trials: int, max_concurrenc
         # so only the user side needs this. Same reasoning-token cap
         # llm_agent.py needs for this model (mandatory reasoning, burns
         # the whole budget if uncapped).
-        llm_user=model, llm_args_user={"max_tokens": 1000, "extra_body": {"reasoning": {"max_tokens": 300}}},
+        llm_user=model, llm_args_user={"max_tokens": 1000, "extra_body": {"reasoning_effort": "low"}},
         task_split_name="base", num_trials=num_trials,
         max_steps=30, max_concurrency=max_concurrency,
         save_to=str(save_to),
@@ -91,7 +91,7 @@ def main():
     args = parser.parse_args()
 
     domains = DOMAINS if args.domain == "all" else [args.domain]
-    model = f"openrouter/{os.environ['LLM_MODEL']}"
+    model = f"groq/{os.environ['LLM_MODEL']}"
     RESULTS_DIR.mkdir(parents=True, exist_ok=True)
 
     summary_path = RESULTS_DIR / "summary.json"

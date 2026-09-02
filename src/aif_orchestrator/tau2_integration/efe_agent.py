@@ -192,7 +192,7 @@ class ControlNodeAgent(
             ],
             call_name="control_node_confidence",
             max_tokens=150,
-            extra_body={"reasoning": {"max_tokens": 100}},
+            extra_body={"reasoning_effort": "low"},
         )
         text = (resp.content or "").strip().lower()
         for bin_ in ("low", "medium", "high"):
@@ -219,7 +219,7 @@ class ControlNodeAgent(
             assistant_message = generate(
                 model=self.llm, tools=self.tools, messages=state.system_messages + state.messages,
                 call_name="control_node_agent_first_turn", max_tokens=600,
-                extra_body={"reasoning": {"max_tokens": 300}},
+                extra_body={"reasoning_effort": "low"},
             )
             state.messages.append(assistant_message)
             return assistant_message, state
@@ -245,7 +245,7 @@ class ControlNodeAgent(
             assistant_message = generate(
                 model=self.llm, messages=state.system_messages + state.messages,
                 call_name="control_node_agent_post_escalation", max_tokens=600,
-                extra_body={"reasoning": {"max_tokens": 300}},
+                extra_body={"reasoning_effort": "low"},
             )
             state.messages.append(assistant_message)
             return assistant_message, state
@@ -281,7 +281,7 @@ class ControlNodeAgent(
             assistant_message = generate(
                 model=self.llm, tools=self.tools, messages=messages,
                 call_name="control_node_agent_response", max_tokens=600,
-                extra_body={"reasoning": {"max_tokens": 300}},
+                extra_body={"reasoning_effort": "low"},
             )
 
         state.messages.append(assistant_message)
