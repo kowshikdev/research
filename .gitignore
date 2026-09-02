@@ -12,3 +12,6 @@ uv.lock
 # can get large across a real sweep) -- keep only the summary.
 results/stage3_tau2/*
 !results/stage3_tau2/summary.json
+# Per-run pipeline artifact (timings churn every run; the citable
+# results are the stage-specific JSON files alongside it).
+results/pipeline_run.json

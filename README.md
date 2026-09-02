@@ -29,22 +29,30 @@ what's blocked, and what to do first.
 | [`docs/tau2-bench-integration.md`](docs/tau2-bench-integration.md) | The real benchmark wiring |
 | [`docs/observation-derivation.md`](docs/observation-derivation.md) | How the 4 observation modalities get computed, across all 3 environments |
 | [`docs/experiment-pipeline.md`](docs/experiment-pipeline.md) | The research stages, as a diagram, with status |
+| [`docs/testing-and-pipeline.md`](docs/testing-and-pipeline.md) | How this is verified, and what "verified" doesn't cover |
 | [`docs/known-issues-and-gotchas.md`](docs/known-issues-and-gotchas.md) | Every real bug caught, consolidated, with a lesson for each |
 | [`docs/stage0.5-kill-test-results.md`](docs/stage0.5-kill-test-results.md) / [`docs/stage2-baselines-results.md`](docs/stage2-baselines-results.md) | Actual experiment results |
 
+Plans: [`RESEARCH_PLAN.md`](RESEARCH_PLAN.md) (thesis narrative) ·
+[`ROADMAP.md`](ROADMAP.md) (what happens next, and the gates that could
+stop it) · [`context/TODOS.md`](context/TODOS.md) (short-horizon
+checklist).
+
 ## Quick verification
 
+Two commands cover everything reproducible offline:
+
 ```bash
-.venv/bin/python scripts/tmaze_sanity_check.py                       # Stage 0
-.venv/bin/python -m aif_orchestrator.kill_test.run_kill_test          # Stage 0.5 (~1 min)
-.venv/bin/python -m aif_orchestrator.graph                             # Stage 1 (mock agent)
-.venv/bin/python -m aif_orchestrator.graph --stage2                     # all 5 controllers through the real graph
-.venv/bin/python -m aif_orchestrator.baselines.run_model_matched_eval    # Stage 2 Part 2, the real result (~1-2 min)
-.venv/bin/python scripts/estimate_stage3_cost.py --domain all             # Stage 3 cost estimate
+.venv/bin/pytest -q                              # 135 tests, seconds
+.venv/bin/python scripts/run_full_pipeline.py     # every offline stage, end to end
 ```
 
-`--llm` and the tau2 integration need `.env` set and open network access
-— see `context/TODOS.md`.
+`run_full_pipeline.py --quick` skips the slow evaluations; `--only
+stage1 stage2-part2` runs a subset. It writes `results/pipeline_run.json`
+with per-stage pass/fail and the headline numbers.
+
+The real-LLM demo (`graph.py --llm`) and the tau2-bench integration need
+`.env` set and open network access — see `context/TODOS.md`.
 
 ## Setup
 

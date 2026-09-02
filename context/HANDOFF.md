@@ -276,7 +276,43 @@ heuristic thresholds. Full thesis plan: `RESEARCH_PLAN.md`.
     tau2 import chain, and obviously the actual Stage 3 sweep itself.
     Full detail: `docs/known-issues-and-gotchas.md` #11.
 
-14. **8 new architecture/design docs, `docs/` — built this pass.**
+15. **Test suite, analysis layer, pipeline runner, CI, and roadmap —
+    built after the docs pass.** These closed the remaining end-to-end
+    gaps: there were no tests at all, no CI, and nothing that read back
+    the decision logs the pipeline had been writing since Stage 1.
+    - **`tests/` (135 tests, ~2s, no network)** — engine, all five
+      controllers' interface conformance (parametrized, so "they're
+      interchangeable" is checked rather than asserted in prose), graph
+      routing and the real `interrupt()`/resume flow, OPA fail-safe
+      behavior, kill-test reproducibility, the analysis layer, and the
+      cost estimator. Every silent-failure bug in
+      `docs/known-issues-and-gotchas.md` has a regression test pinned to
+      it — that archive shows the characteristic failure here is a
+      plausible wrong decision, not a crash.
+    - **`src/aif_orchestrator/analysis/`** — `decision_log.py` (reader
+      that raises rather than silently analyzing a subset),
+      `interpretability.py` (**Stage 5's deliverable** — answers whether
+      the epistemic term ever actually changed a decision, and flags the
+      case where it never did), `stage3_report.py` (sweep → comparison
+      table; the raw-dump path is explicitly unvalidated against real
+      tau2 output).
+    - **`scripts/run_full_pipeline.py`** — every offline stage in one
+      command, writing `results/pipeline_run.json`. Verified: 7/7 stages
+      pass and the headline numbers reproduce the documented Stage 2
+      Part 2 result exactly.
+    - **`.github/workflows/ci.yml`** — tests on 3.11/3.13 with a
+      wrong-`pymdp`-package check, quick pipeline per PR, full pipeline
+      nightly with `results/` uploaded.
+    - **`ROADMAP.md`** — the medium-horizon plan with its decision gates,
+      including the two that could redirect the thesis (a null result on
+      Stage 3, and the epistemic term turning out never to matter).
+    - One real inconsistency fixed along the way: `EFEControlNode` had no
+      `name` attribute while every baseline did, so decision logs
+      labelled it `"EFEControlNode"` against `"heuristic"` etc. A test
+      caught it.
+
+14. **8 architecture/design docs, `docs/` — built in the docs pass**
+    (a 9th, `testing-and-pipeline.md`, came with the test suite above).
     `architecture-overview.md` (start here — the system map),
     `efe-control-node-design.md`, `langgraph-integration.md`,
     `baselines-design.md`, `tau2-bench-integration.md`,

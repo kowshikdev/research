@@ -22,6 +22,7 @@ where in the pipeline each one bit.
 | 9 | 3 | `transfer_to_human_agents` doesn't halt execution like `interrupt()` does | Agent re-escalates 2-7 times per conversation, reward≈0 | Terminal `escalated` flag; no tools offered after |
 | 10 | 3 | Router would lazily train against the mismatched mock env inside tau2 | Silent regression to Stage 2 Part 1's "not a fair test" baseline | `register.py` pre-trains against `ModelMatchedEnv` first |
 | 11 | environment | Cloud sandbox network policy blocks arbitrary third-party hosts | `httpx2.ProxyError: 403 Forbidden` reaching `openrouter.ai` | Not fixable from the sandbox — run LLM-dependent work locally |
+| 12 | 2 | Learned router's exact numbers don't reproduce across machines | Committed reward 3.393 / correct-escalation 0.255; re-run elsewhere gives 3.434 / 0.236 | Not fixed — documented; within-environment determinism pinned by a test |
 
 ## Detail
 
@@ -186,6 +187,41 @@ access** — a local machine, typically. `context/HANDOFF.md` and
 **Lesson**: verify what a sandboxed environment can actually reach before
 debugging a credential — a correctly-configured key can still fail for
 reasons that have nothing to do with the key.
+
+### 12. The learned router's exact numbers are environment-dependent
+
+Re-running `run_model_matched_eval.py` in a different environment
+(Linux/Python 3.11) than the one that produced the committed results
+(Windows/Python 3.13) reproduces **four of five controllers bit-exactly**
+— heuristic 2.9989, VOI 3.1421, ReAct 3.1830, EFE 2.8042 all identical —
+but not the learned router: committed `avg_reward` 3.3934 /
+`correct_escalation_rate` 0.2548 versus 3.4344 / 0.2355 on the re-run.
+
+The router is the only controller with *trained* state, which localizes
+it: everything else is a pure function of the (identical) generative
+model and seed. Training is **bit-deterministic within an environment** —
+training twice in-process yields an identical Q-table hash — so this is
+not nondeterminism in the code; it's a cross-environment difference in
+how the seeded RNG stream and the training trajectory interact.
+
+**What this does and doesn't affect.** It does not change any
+qualitative conclusion in `stage2-baselines-results.md`: the router still
+has by far the worst correct-escalation rate of the five (0.24-0.26 vs
+EFE's 0.95) and still the highest raw reward, which is the whole finding.
+It does mean **exact router figures should be quoted with the
+environment that produced them**, and a reviewer re-running on different
+hardware should expect ~1% drift on reward and a few points on the
+escalation rate.
+
+`test_router_training_is_deterministic_within_an_environment` pins the
+property that actually matters — that a re-run reproduces its own
+results. An exact cross-machine equality test would fail for reasons
+that aren't bugs.
+
+**Lesson**: "reproducible" needs a scope. Pure-function results reproduce
+anywhere; anything with a trained artifact reproduces within an
+environment, and the distinction belongs next to the numbers rather than
+in a reader's assumptions.
 
 ## Open unknowns (not bugs, but flagged so they don't get mistaken for measurements)
 

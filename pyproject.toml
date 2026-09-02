@@ -14,9 +14,23 @@ dependencies = [
     "python-dotenv",
 ]
 
+[project.optional-dependencies]
+# Everything the test suite and CI need beyond the runtime deps. Kept
+# separate so a plain `pip install -e .` stays minimal for someone who
+# only wants to run the pipeline.
+dev = ["pytest>=8.0"]
+
 [build-system]
 requires = ["setuptools>=68"]
 build-backend = "setuptools.build_meta"
 
 [tool.setuptools.packages.find]
 where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+# tau2_integration/ imports the `tau2` package at module level, which is
+# only installed when external/tau2-bench is set up (see
+# context/TODOS.md). Its tests skip themselves at import; this keeps a
+# bare `pytest` green on a fresh clone with no tau2-bench.
+addopts = "-q"
