@@ -29,16 +29,25 @@ AGENTS = ["efe_agent", "heuristic_agent", "router_agent", "voi_agent", "react_ag
 
 
 def main():
-    model = f"groq/{os.environ['LLM_MODEL']}"
+    model = os.environ["LLM_MODEL"]
+    # see run_stage3_eval.py: litellm mis-parses "groq/<vendor>/<model>"
+    # strings, so pass the model id bare plus an explicit provider/key.
+    groq_kwargs = {
+        "custom_llm_provider": "groq",
+        "api_key": os.environ["GROQ_API_KEY"],
+        "api_base": "https://api.groq.com/openai/v1",
+    }
     tasks = get_tasks("mock", num_tasks=1)
     task = tasks[0]
 
     for agent in AGENTS:
         config = TextRunConfig(
             domain="mock", agent=agent, user="user_simulator",
-            llm_agent=model, llm_args_agent={},
+            llm_agent=model, llm_args_agent=dict(groq_kwargs),
             # cap the user simulator's own call -- see run_stage3_eval.py
-            llm_user=model, llm_args_user={"max_tokens": 1000, "extra_body": {"reasoning_effort": "low"}},
+            llm_user=model, llm_args_user={
+                "max_tokens": 1000, "extra_body": {"reasoning_effort": "low"}, **groq_kwargs,
+            },
             max_steps=20,
         )
         print(f"=== {agent} on task {task.id} ===")

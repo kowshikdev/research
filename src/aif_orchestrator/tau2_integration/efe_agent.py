@@ -47,8 +47,9 @@ from tau2.data_model.message import (
     ToolMessage,
     UserMessage,
 )
+from litellm.exceptions import BadRequestError as LiteLLMBadRequestError
 from tau2.environment.tool import Tool
-from tau2.utils.llm_utils import generate
+from tau2.utils.llm_utils import generate as _tau2_generate
 
 from ..efe_controller import D_PRIOR, EFEControlNode, Observation
 from ..opa_policy import evaluate_policy_gate
@@ -71,6 +72,46 @@ SYSTEM_PROMPT = """
 {domain_policy}
 </policy>
 """.strip()
+
+
+def generate(*, messages: list, **kwargs) -> "AssistantMessage":
+    """Wraps tau2's own `generate` with a retry for a deterministic Groq
+    gpt-oss-120b quirk: it sometimes emits `null` for an optional string
+    tool argument, which Groq's strict schema validator rejects outright
+    (litellm.BadRequestError, code "tool_use_failed") -- not a transient
+    error, so tau2/litellm's own retry logic (which targets 5xx/rate
+    limits) never fires for it and the exception propagates uncaught.
+    One retry with an explicit nudge, then fall back to a plain-text
+    message rather than crash the whole simulation over one bad call.
+    """
+    try:
+        return _tau2_generate(messages=messages, **kwargs)
+    except LiteLLMBadRequestError as e:
+        if "tool_use_failed" not in str(e):
+            raise
+        nudge = SystemMessage(
+            role="system",
+            content=(
+                "Your previous tool call was rejected because it passed null "
+                "for an optional parameter. Omit optional parameters you don't "
+                "need entirely -- never pass null for them."
+            ),
+        )
+        try:
+            return _tau2_generate(messages=messages + [nudge], **kwargs)
+        except LiteLLMBadRequestError:
+            return AssistantMessage.text(
+                content="Could you confirm the details for your request? I want to make sure I get this right."
+            )
+
+
+def _ensure_non_empty(message: "AssistantMessage") -> "AssistantMessage":
+    """Some models (observed: Groq gpt-oss-120b) occasionally spend the
+    whole max_tokens budget on hidden reasoning and return a message
+    with neither content nor tool_calls, which tau2 rejects outright."""
+    if message.content or message.is_tool_call():
+        return message
+    return AssistantMessage.text(content="Could you tell me more about what you need help with?")
 
 TRANSFER_TOOL_NAME = "transfer_to_human_agents"
 
@@ -193,6 +234,7 @@ class ControlNodeAgent(
             call_name="control_node_confidence",
             max_tokens=150,
             extra_body={"reasoning_effort": "low"},
+            **self.llm_args,
         )
         text = (resp.content or "").strip().lower()
         for bin_ in ("low", "medium", "high"):
@@ -220,7 +262,9 @@ class ControlNodeAgent(
                 model=self.llm, tools=self.tools, messages=state.system_messages + state.messages,
                 call_name="control_node_agent_first_turn", max_tokens=600,
                 extra_body={"reasoning_effort": "low"},
+                **self.llm_args,
             )
+            assistant_message = _ensure_non_empty(assistant_message)
             state.messages.append(assistant_message)
             return assistant_message, state
 
@@ -246,7 +290,19 @@ class ControlNodeAgent(
                 model=self.llm, messages=state.system_messages + state.messages,
                 call_name="control_node_agent_post_escalation", max_tokens=600,
                 extra_body={"reasoning_effort": "low"},
+                **self.llm_args,
             )
+            if not assistant_message.content and not assistant_message.is_tool_call():
+                # Some models (observed: Groq gpt-oss-120b) occasionally
+                # spend the whole max_tokens budget on hidden reasoning
+                # and return empty content here, which tau2 rejects
+                # (AssistantMessage requires content or tool_calls). No
+                # tools are offered on this turn by design (see above),
+                # so a fixed closing line is a safe substitute -- this
+                # path only fires after a transfer has already gone out.
+                assistant_message = AssistantMessage.text(
+                    content="Thank you -- I've transferred you to a human agent who can help further."
+                )
             state.messages.append(assistant_message)
             return assistant_message, state
 
@@ -282,7 +338,9 @@ class ControlNodeAgent(
                 model=self.llm, tools=self.tools, messages=messages,
                 call_name="control_node_agent_response", max_tokens=600,
                 extra_body={"reasoning_effort": "low"},
+                **self.llm_args,
             )
+            assistant_message = _ensure_non_empty(assistant_message)
 
         state.messages.append(assistant_message)
         state.last_policy = decision.policy
