@@ -9,6 +9,7 @@ dependencies = [
     # infer-actively/pymdp is published as "inferactively-pymdp"; it still
     # imports as `import pymdp`.
     "inferactively-pymdp",
+    "langgraph",
 ]
 
 [build-system]

@@ -1,8 +1,13 @@
 # Active Inference & Predictive-Coding Control for Grounded LLM Multi-Agent Orchestration
 
-Research/thesis plan. Status: **Stage 0.5 kill-test complete, result
-positive** — see §4a and [`docs/stage0.5-kill-test-results.md`](docs/stage0.5-kill-test-results.md).
-Proceeding to Stage 1.
+Research/thesis plan. Status: **Stage 1 partially complete, blocked on
+API credentials.** Stage 0.5 kill-test done (positive result, §4a). Stage
+1's EFE control node and LangGraph wiring (incl. the `escalate_to_human`
+→ `interrupt()` pause) are built and proven with a mock agent — see
+[`context/HANDOFF.md`](context/HANDOFF.md) and
+[`context/TODOS.md`](context/TODOS.md) for exactly what's done vs.
+blocked and how to resume. The next step (swap the mock agent for a real
+tool-calling LLM) needs LLM API credentials this environment doesn't have.
 
 ## 1. Thesis statement
 
@@ -188,17 +193,28 @@ not about who has more information.
 
 **Decision:** proceed to Stage 1.
 
-### Stage 1 — EFE control node (weeks 3–6)
-- Implement the EFE control node as a LangGraph node: maps
-  {tool output, confidence signal, OPA verdict, retrieval-quality} →
-  observations → belief update → EFE over the 6 policies → action.
-- Wire `escalate_to_human` to LangGraph's own `interrupt()` + checkpointer
-  pause (no LangRun dependency).
-- Instrument every decision via OTel GenAI spans, logging the epistemic and
-  pragmatic value components separately (cheap now, expensive to
-  retrofit — do this from day one).
-- Deliverable: EFE node running end-to-end on a handful of hand-picked
-  τ²-bench retail tasks, logs show epistemic/pragmatic decomposition.
+### Stage 1 — EFE control node (weeks 3–6) — partially complete, blocked
+
+- [x] EFE control node implementing the real decision-POMDP (4 states, 4
+  observation modalities, 6 policies) — `src/aif_orchestrator/efe_controller.py`.
+  A/B/C/E/D values are hand-specified placeholders matching
+  `docs/decision-pomdp.md`'s semantics, not yet calibrated against real
+  data (Stage 3 work).
+- [x] LangGraph wiring — `src/aif_orchestrator/graph.py`. `escalate_to_human`
+  genuinely pauses via `interrupt()` + `MemorySaver` checkpointer and
+  resumes correctly with `Command(resume=...)`; multi-turn belief tracking
+  proven with a mock (non-LLM) agent step.
+- [x] Per-decision epistemic/pragmatic value logging — currently plain
+  JSONL (`results/stage1_decision_log.jsonl`), not yet real OTel GenAI
+  spans (needs an actual collector/backend — infra decision, not just code).
+- [ ] **Blocked:** swap the mock agent step for a real tool-calling LLM
+  agent — needs LLM API credentials not present in this environment.
+  See `context/TODOS.md` for the exact next steps.
+- [ ] Not started: real OPA instance for the `policy_gate` observation
+  (mock currently hardcodes `allow`); real confidence derivation
+  (self-consistency sampling or a verifier prompt).
+- Original deliverable (EFE node on real τ²-bench tasks with real
+  epistemic/pragmatic logs) still pending the above.
 
 ### Stage 2 — Baselines (weeks 5–7, parallel with Stage 1 tail)
 - Implement heuristic-threshold, learned-router, and ReAct baselines against
