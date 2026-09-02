@@ -1,66 +1,105 @@
 # TODOs — pick up here
 
-Read `context/HANDOFF.md` first for full context. This file is just the
-actionable checklist.
+Read `context/HANDOFF.md` first for full context, and `docs/` (start with
+[`docs/architecture-overview.md`](../docs/architecture-overview.md)) for
+how everything fits together. This file is the actionable checklist.
 
-## Done (no API key needed — all verified working in this repo)
+## Done — verified, no LLM API access needed
 
-- [x] Stage 0: pymdp installed, T-maze sanity check passes (`scripts/tmaze_sanity_check.py`)
-- [x] Stage 0.5: kill-test — EFE matches hand-derived VOI, beats heuristic/router with real statistical significance (`src/aif_orchestrator/kill_test/`, `docs/stage0.5-kill-test-results.md`)
-- [x] Stage 1a: EFE control node generalized to the real frozen decision-POMDP (4 states, 4 obs modalities, 6 policies) — `src/aif_orchestrator/efe_controller.py`. Sanity-tested on 3 hand-picked scenarios (clean success / ambiguous / clearly stuck), all produce the expected policy.
-- [x] Stage 1b: LangGraph wiring — `src/aif_orchestrator/graph.py`. Proven end-to-end with a mock (non-LLM) agent step:
-  - Multi-turn belief tracking works (`task-A` demo: gather_info → call_tool → continue as belief concentrates)
-  - `escalate_to_human` genuinely pauses the graph via `interrupt()` + `MemorySaver` checkpointer, and resuming with `Command(resume=...)` correctly injects human feedback (`task-B` demo)
-  - Per-decision epistemic/pragmatic value logged to `results/stage1_decision_log.jsonl` (placeholder for the real OTel GenAI instrumentation — see below)
+- [x] **Stage 0**: pymdp installed, T-maze sanity check passes (`scripts/tmaze_sanity_check.py`)
+- [x] **Stage 0.5**: kill-test — EFE matches hand-derived VOI, beats heuristic/router with real statistical significance (`src/aif_orchestrator/kill_test/`, `docs/stage0.5-kill-test-results.md`)
+- [x] **Stage 1a**: EFE control node over the real frozen decision-POMDP (`src/aif_orchestrator/efe_controller.py`) — see `docs/efe-control-node-design.md` for the design, including a real bug caught and fixed (missing unnecessary-action cost, made EFE indifferent between `continue`/`gather_info` when already solved)
+- [x] **Stage 1b**: LangGraph wiring (`src/aif_orchestrator/graph.py`) — multi-turn belief tracking, `escalate_to_human` → real `interrupt()`/checkpointer pause, verified end-to-end. See `docs/langgraph-integration.md`.
+- [x] **Stage 2**: all 4 baselines (heuristic/learned_router/VOI/ReAct, `src/aif_orchestrator/baselines/`) ported to the real decision-POMDP, pluggable into the same LangGraph scaffold via `make_control_step()`. Two real reward-shaping bugs caught and fixed along the way. See `docs/baselines-design.md`.
+- [x] **Stage 2 Part 2**: model-matched comparison (`run_model_matched_eval.py`) — the real repeat of Stage 0.5's methodology at real scale. **Real finding**: EFE and VOI diverge here (unlike Stage 0.5's toy scale) — EFE wins escalation recall (0.951), VOI wins precision (0.002 unnecessary-escalation)/reward. Read `docs/stage2-baselines-results.md` Part 2, not Part 1.
+- [x] **OPA `policy_gate` wiring** — real `opa eval` against `policies/policy_gate.rego`, not a hardcoded `allow`. See `docs/observation-derivation.md`.
+- [x] **tau2 agent wrappers for all 4 baselines** (`src/aif_orchestrator/tau2_integration/baseline_agents.py`) — `HeuristicAgent`/`RouterAgent`/`VOIAgent`/`ReActAgent`, each just `ControlNodeAgent` with `control_node_cls` swapped, registered in `register.py` under `heuristic_agent`/`router_agent`/`voi_agent`/`react_agent`. **Correction**: an earlier version of this file said these "would need... their own tau2 agent wrappers, not yet built — only EFE has one" — that was stale by the time it was written; they exist and `run_stage3_eval.py` already targets all 5 by default. Not yet exercised in a real sweep (see below), but the wrapper code itself is done.
+- [x] **Cost/budget estimator for Stage 3** (`scripts/estimate_stage3_cost.py`, built this pass) — parametrized, documents its own assumptions, runs with no network/tau2 install needed (best-effort real task-count loading if tau2 *is* installed). Default scenario (all domains, 1 trial, all 5 agents): **~$5 total** at current DeepSeek V4 Flash pricing on OpenRouter — re-run with corrected `--avg-turns`/`--escalation-rate`/`--policy-tokens` once a real pilot exists before treating this as final.
+- [x] **Router training-source gap for Stage 3** (found and fixed this pass) — `register.py` now pre-trains `LearnedRouterControlNode` against `model_matched_source_factory` (100,000 episodes, ~2.5s, verified in isolation) before registering any agents. Without this, `RouterAgent` would have lazily self-trained against the mismatched mock env on first use inside a real tau2 sweep — the same "not a fair test" issue Stage 2 Part 1 already flagged, silently reintroduced. See `docs/known-issues-and-gotchas.md` #10. **Needs a local re-run of the smoke test to confirm this doesn't break anything through the full tau2 import chain**, which this cloud session can't reach (see below).
+- [x] **8 new architecture/design docs** (this pass) — `docs/architecture-overview.md`, `efe-control-node-design.md`, `langgraph-integration.md`, `baselines-design.md`, `tau2-bench-integration.md`, `observation-derivation.md`, `experiment-pipeline.md`, `known-issues-and-gotchas.md`. Start with `architecture-overview.md`.
 
-## Done (Stage 1c, resumed locally with API credentials — see below)
+## Done — needs real LLM API access, verified in an earlier local session
 
-- [x] **Stage 1c: swap `mock_agent_step` for a real tool-calling LLM agent step.** `src/aif_orchestrator/llm_agent.py` (new) + `graph.py`'s `llm_agent_step`. Uses an OpenAI-compatible client (OpenRouter, via `LLM_API_KEY`/`LLM_MODEL`/`LLM_BASE_URL` in `.env`), a fake deterministic `lookup_order` tool (real LLM tool-call decisions, scripted backend — same role a benchmark harness environment plays), and a verifier-prompt call for `confidence` (the cheaper of the two options `context/HANDOFF.md` flagged; self-consistency sampling was the alternative). `policy_gate` still hardcoded `allow` — OPA wiring is still its own TODO below. EFE's chosen policy is fed back into the next turn as a steering message (`llm_agent.POLICY_STEER`) so `retry`/`call_tool`/`gather_info` actually change what the agent does next, not just re-ask the same question. Verified end-to-end: `.venv/Scripts/python -m aif_orchestrator.graph --llm` — order-1001 task resolves in 1 turn (`continue`), order-9999 task genuinely escalates and pauses via `interrupt()`, same as the mock demo's Task A/B.
-  - **Gotcha hit and fixed:** the model this session's `.env` pointed at (`stealth/ox-alpha` on OpenRouter) was retired mid-session; swapped to `z-ai/glm-5.3-flash`. That model makes reasoning mandatory (can't disable via `reasoning: {enabled: false}` — 400s) and burns the full `max_tokens` budget on hidden reasoning tokens if uncapped, returning empty `content` and making calls balloon. Fixed with `extra_body={"reasoning": {"max_tokens": N}}` plus a matching overall `max_tokens` headroom on every call in `llm_agent.py`. If you swap models again, check whether this still applies.
+- [x] **Stage 1c**: real tool-calling LLM agent step (`src/aif_orchestrator/llm_agent.py`, `graph.py`'s `llm_agent_step`). Verified: `.venv/Scripts/python -m aif_orchestrator.graph --llm`.
+- [x] **Stage 3 wiring**: tau2-bench cloned and pinned (commit `a2c0247`, tag `tau2==1.0.1`), `ControlNodeAgent` built generically (all 5 agents share it), registered, smoke-tested against a real `mock`-domain task (reward 1.0). Two real integration bugs caught and fixed (turn-0 cold start, `escalate_to_human` re-triggering — see `docs/known-issues-and-gotchas.md` #8-9). See `docs/tau2-bench-integration.md`.
 
-## Done (Stage 2 baselines)
+## Environment constraint discovered this pass — read before assuming something is blocked on credentials alone
 
-- [x] **Stage 2: heuristic / learned_router / VOI / ReAct baselines**, ported from the kill-test's toy versions to the real 4-state/6-policy decision-POMDP — `src/aif_orchestrator/baselines/`. All four share `EFEControlNode`'s interface and are pluggable into the real LangGraph scaffold via `graph.build_graph(control_step=make_control_step(<cls>))` (verified end-to-end incl. the real `interrupt()` pause: `python -m aif_orchestrator.graph --stage2`), plus a fast statistical comparison against `mock_agent_step` (`python -m aif_orchestrator.baselines.run_stage2_eval`, results + write-up in `docs/stage2-baselines-results.md`).
-  - `heuristic.py`: straightforward threshold port, as planned.
-  - `router.py`: **belief-state-parity fix applied** (Stage 0.5's flagged gap) — Q-learning features are (belief bucket, observation), not just the latest observation.
-  - `voi.py`: **diverges from the original TODO here** ("LLM-estimated P(success|context)") — implemented instead as a hand-derived one-step Bayesian expected-utility lookahead over the *same assumed observation model EFE itself uses* (`efe_controller.OBS_DISTS`/`B_TRANSITIONS`), with hand-coded step/escalate costs. Reasoning: the true generative model still isn't known at this stage either way, and reusing EFE's own assumed model (not a separately invented one) is the fairer "same observations, same assumptions, different math" comparison this stage needs — see `belief.py`'s docstring. An LLM-estimated version remains a real option for Stage 3, where actual agent trajectories would let it estimate something the current placeholder model can't.
-  - `react.py`: fixed reactive floor baseline (call_tool until success, no escalation), as planned.
-  - **Two real bugs caught and fixed during this stage** (details in `belief.py`'s docstring): (1) rewarding every turn's observation quality let the router learn to never choose `continue` at all (free reward for stalling); (2) with no ground-truth-keyed reward term, nothing taught the router to prefer `escalate_to_human` specifically over `continue` when a task was genuinely unresolvable. Both fixed via `belief.step_reward` (terminal-only payoff + an outcome adjustment keyed off ground truth).
+This cloud sandbox's network egress is locked to a fixed allowlist
+(Anthropic's own API, PyPI/npm/crates.io/Go-proxy) — `openrouter.ai` is
+**not** on it, and a call to it fails at the proxy layer
+(`403 Forbidden` on the CONNECT) regardless of API key correctness. This
+is architectural, not a missing-credential problem — see
+`docs/known-issues-and-gotchas.md` #11. Any LLM-dependent verification
+(Stage 1c, Stage 2 baseline demos against a live model, Stage 3 smoke
+test or sweep, and the router fix's full-chain verification above) has
+to happen locally, where network access is open.
 
-- [x] **Model-matched Stage 2 comparison — closes the "not a fair test like Stage 0.5" gap the first Stage 2 pass left open.** `src/aif_orchestrator/baselines/model_env.py` (new): a simulator sampling from `efe_controller.py`'s own `D_PRIOR`/`OBS_DISTS`/`B_TRANSITIONS` as ground truth — the real analogue of `kill_test/env.py`. `router.py`'s `train()` was refactored to take a pluggable `source_factory` so the router can be retrained against this env too (`model_matched_source_factory`), not just evaluated on it after training on the mismatched mock (that would test transfer, not close the gap). Run: `python -m aif_orchestrator.baselines.run_model_matched_eval`. Full results + findings: `docs/stage2-baselines-results.md` Part 2.
-  - **Real finding, not just plumbing this time:** EFE and VOI do NOT converge to statistically indistinguishable behavior at this scale, unlike Stage 0.5's toy model. EFE has the best correct-escalation rate (0.951) but lowest reward/throughput; VOI is the best-calibrated on precision (0.002 unnecessary-escalation) with good recall (0.766) and higher reward than EFE. **They diverge and trade off differently — this is the real Stage 2 result, and Part 1's numbers should not be cited over it.**
-  - **The learned router, even with belief parity and 100k training episodes (up from 10k — the model-matched env's observation space needed much more coverage), has a real, mechanistically-understood calibration weakness**: it has the highest raw reward (3.393) but the worst correct-escalation rate (0.255), because genuinely unresolvable tasks are a training-distribution minority and Q-learning optimizes aggregate reward, not rare-event recall. This is DIFFERENT from the belief-parity issue (which was about information access, not what training does with that information) — worth remembering if anyone proposes "just give the router more training" as a fix; more of the same training regime won't fix a class-imbalance problem.
-  - React ties/beats VOI on raw reward again here (3.183, second overall) despite zero escalation ability — confirms Part 1's finding under the fair comparison.
-
-## Done (OPA policy_gate wiring)
-
-- [x] **Real OPA instance for `policy_gate`** — `policies/policy_gate.rego` + `src/aif_orchestrator/opa_policy.py`. Shells out to `opa eval` per turn (no long-running server needed — a single CLI call per decision, evaluated via stdin-input) against the local `opa` binary. The policy is deliberately small given the current toolset (`llm_agent.py` only has one read-only `lookup_order` tool, nothing irreversible yet to genuinely deny): `deny` after 3+ repeated lookups of the same order_id (a real retry-loop circuit breaker), `needs_review` on a tool error, `allow` otherwise. Wired into `llm_agent.real_agent_step` only — `mock_agent_step` stays hardcoded `allow` since it doesn't track real tool-call history to check a retry policy against (a free non-LLM stand-in, per its own docstring). `opa_policy.evaluate_policy_gate` fails safe to `"needs_review"` (not `"allow"`) if OPA isn't installed or the policy errors. Verified end-to-end via `python -m aif_orchestrator.graph --llm`.
-  - Extend `policies/policy_gate.rego` (not the Python wrapper) for richer policies once `llm_agent.py` grows tools worth actually denying (e.g. a cancel/refund action).
+An OpenRouter key **was** provided during this pass and is stored in
+`.env` (gitignored, never committed, never appeared in any command
+output) with `LLM_MODEL=deepseek/deepseek-v4-flash` (verified as the
+real, current, cheap slug — $0.098/$0.196 per MTok input/output) — ready
+to use the moment this repo runs somewhere with open network access.
 
 ## Not started
 
-- [ ] Replace the plain JSONL decision log with real OTel GenAI semantic-convention spans (`gen_ai.agent` / `invoke_agent`) — noted in `RESEARCH_PLAN.md` §3.2 as still-experimental conventions; needs an actual OTel collector/backend to send spans to, which is an infra decision, not just code.
-
-## In progress (Stage 3: real benchmark integration)
-
-- [x] **tau2-bench cloned and wired, EFEAgent built and smoke-tested.** `external/tau2-bench` (gitignored, not vendored) cloned and pinned at commit `a2c0247` (tagged release `tau2==1.0.1` — the "real τ²-bench" from RESEARCH_PLAN.md is now branded τ³-bench upstream, same repo/lineage: `sierra-research/tau2-bench`). Installed via `uv sync` (its own `.venv`, Python 3.12) AND editable-installed into *our* venv (`pip install -e external/tau2-bench` + `audioop-lts` backport, since our venv is Python 3.13 which dropped stdlib `audioop` that tau2's voice-module import chain needs even when unused) so `aif_orchestrator` and `tau2` are importable in one process.
-  - `src/aif_orchestrator/tau2_integration/efe_agent.py`: `EFEAgent(LLMConfigMixin, HalfDuplexAgent)` — tau2's turn-based agent contract, wrapping `EFEControlNode` the same way `llm_agent.py` wraps the order-lookup demo. Registered as a "community" agent (`register.py`, calls `registry.register_agent_factory` from our own code — no edits to the vendored repo) under the name `"efe_agent"`.
-  - **`escalate_to_human` is a real, benchmark-scored action here**, not just a demo pause: every core tau2 domain (mock/retail/airline/telecom) has a built-in `transfer_to_human_agents(summary)` tool, so EFE choosing that policy makes the agent genuinely call it — tau2's own evaluation criteria can grade whether that was the right or wrong call for a task.
-  - `policy_gate` reuses `opa_policy.py`/`policies/policy_gate.rego` (field renamed `same_order_lookup_count` → `same_tool_call_count` to generalize past the order-lookup demo, `llm_agent.py` updated to match) — the retry-loop-count input is derived generically from tau2's own tool-call message history, not domain-specific.
-  - **Verified end-to-end**: `python -m aif_orchestrator.tau2_integration.run_stage3_smoke` — one `mock`-domain task, `efe_agent` vs `user_simulator`, both on `openrouter/z-ai/glm-5.3-flash`. Reward 1.0, no errors, real tool call (`create_task`) executed and observed correctly by the EFE control loop.
-  - **Gotcha:** tau2 (LiteLLM) reads `OPENROUTER_API_KEY`; our own `.env` uses `LLM_API_KEY` (`llm_agent.py`'s own naming). `run_stage3_smoke.py` maps one to the other rather than keeping two copies of the same secret.
-- [ ] **Not yet done: the actual evaluation sweep** — retail/airline/telecom domains, `efe_agent` vs. Stage 2's four baselines (would need their own tau2 agent wrappers, not yet built — only EFE has one), multiple trials each. **This is the real budget item** RESEARCH_PLAN.md flags — the smoke test above was one cheap mock-domain task; a real sweep is many tasks × many turns × (agent-LLM + user-simulator-LLM + our own confidence-verifier LLM) calls each. Get explicit sign-off on scope/budget before running this, not just before starting Stage 3 generally.
+- [ ] **The actual Stage 3 evaluation sweep** — the real cost center. Run `scripts/estimate_stage3_cost.py` first, get explicit scope sign-off (which domains, how many trials), THEN:
+  ```bash
+  .venv/Scripts/python -m aif_orchestrator.tau2_integration.run_stage3_smoke   # confirm the router fix didn't break anything
+  .venv/Scripts/python -m aif_orchestrator.tau2_integration.run_stage3_eval --domain retail --num-trials 1   # one domain first
+  ```
+  `run_stage3_eval.py` saves incrementally (`results/stage3_tau2/summary.json`, gitignored except that summary file) and supports `auto_resume` — a re-run picks up an existing save rather than re-paying for completed simulations.
+- [ ] Once a small real pilot exists, correct `scripts/estimate_stage3_cost.py`'s placeholder assumptions (`--avg-turns`, `--escalation-rate`, `--policy-tokens`) from real observed numbers, and re-estimate before committing to the full sweep.
+- [ ] Replace the plain JSONL decision log with real OTel GenAI semantic-convention spans (`gen_ai.agent`/`invoke_agent`) — still experimental conventions (`RESEARCH_PLAN.md` §3.2); needs an actual OTel collector/backend, an infra decision, not just code.
 - [ ] HiL-Bench (`arXiv:2604.09408`) — not yet checked for a public code/data release.
-- [ ] Stage 4: GAIA validation subset (optional, only if Stage 3 finishes early)
-- [ ] Stage 5: interpretability analysis — the epistemic/pragmatic decomposition logging already exists (`efe_controller.py`'s `Decision.epistemic_value` / `.pragmatic_value`), so this is mostly analysis + writeup once Stage 3 data exists
-- [ ] Stage 6: writing
+- [ ] Stage 4: GAIA validation subset (optional, only if Stage 3 finishes early).
+- [ ] Stage 5: interpretability analysis — the epistemic/pragmatic decomposition logging already exists and has from day one (`efe_controller.py`'s `Decision.epistemic_value`/`.pragmatic_value`, logged by both `graph.py` and `tau2_integration/`), so this is mostly analysis + writeup once Stage 3 sweep data exists.
+- [ ] Stage 6: writing.
 
-## Environment setup (done in this repo already, kept here for reproducibility)
+## Environment setup (for a fresh local session)
 
-1. `.venv` created with `python -m venv .venv && .venv/Scripts/pip install -e .` (Windows paths — use `.venv/bin/...` on Linux/Mac)
-2. `.env` at repo root holds `LLM_API_KEY` / `LLM_MODEL` / `LLM_BASE_URL` (OpenRouter). `python-dotenv` and `openai` are now in `pyproject.toml`'s dependencies.
-3. Mock demo: `.venv/Scripts/python -m aif_orchestrator.graph`. Real-LLM demo: `.venv/Scripts/python -m aif_orchestrator.graph --llm`.
+```bash
+python3 -m venv .venv && .venv/bin/pip install -e .   # (.venv/Scripts/... on Windows)
+```
+
+`.env` at repo root needs `LLM_API_KEY` / `LLM_MODEL` / `LLM_BASE_URL`
+(OpenRouter by default; `.env` already exists in this checkout with a
+working key + `deepseek/deepseek-v4-flash` if this session's work was
+pulled in). `python-dotenv` and `openai` are in `pyproject.toml`'s
+dependencies already.
+
+tau2-bench (for Stage 3 only): clone `sierra-research/tau2-bench` into
+`external/tau2-bench` (gitignored), pin commit `a2c0247`, `uv sync`
+inside it (its own venv, Python 3.12), then `pip install -e
+external/tau2-bench` into *this* project's venv too — plus the
+`audioop-lts` backport if this venv is Python 3.13+ (stdlib dropped
+`audioop`, which tau2's voice-module import chain needs even unused).
+`run_stage3_eval.py`/`run_stage3_smoke.py` map `.env`'s `LLM_API_KEY` to
+`OPENROUTER_API_KEY` automatically (tau2's LiteLLM backend reads that
+name, not ours).
+
+## Quick verification (no network needed)
+
+```bash
+.venv/bin/python scripts/tmaze_sanity_check.py                       # Stage 0
+.venv/bin/python -m aif_orchestrator.kill_test.run_kill_test          # Stage 0.5 (~1 min)
+.venv/bin/python -m aif_orchestrator.graph                             # Stage 1 (mock agent)
+.venv/bin/python -m aif_orchestrator.graph --stage2                     # all 5 controllers through the real graph
+.venv/bin/python -m aif_orchestrator.baselines.run_model_matched_eval    # Stage 2 Part 2 (~1-2 min)
+.venv/bin/python scripts/estimate_stage3_cost.py --domain all             # Stage 3 cost estimate
+```
 
 ## Next up
 
-Stage 1c, Stage 2 (both parts), and OPA `policy_gate` wiring are all done. Stage 3's wiring (tau2-bench cloned, EFEAgent built and smoke-tested) is done too. **Next decision point: scope/budget for the real eval sweep** (which domains, how many tasks/trials, whether to build tau2 agent wrappers for the Stage 2 baselines too before comparing) — not a coding task, a scope call.
+Everything network-independent is done, including the router-training
+fix and the cost estimator. The one remaining decision is the same one
+flagged before this pass, now with a concrete number attached:
+**scope/budget for the real Stage 3 sweep** — the estimator says ~$5 for
+the full default scenario (all domains, 1 trial, all 5 agents) at
+current DeepSeek V4 Flash pricing, but that rests on placeholder
+assumptions about average turns/escalation rate/policy size (see the
+estimator's own docstring) that only a real local pilot can correct.
+First step locally: re-run the smoke test (re-verifies the router fix
+through the full tau2 import chain this cloud session can't reach), then
+a small real pilot to correct the estimator's assumptions, then decide
+scope for the full sweep.
