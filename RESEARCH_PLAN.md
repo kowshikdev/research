@@ -1,6 +1,8 @@
 # Active Inference & Predictive-Coding Control for Grounded LLM Multi-Agent Orchestration
 
-Research/thesis plan. Status: **planning stage** — nothing implemented yet.
+Research/thesis plan. Status: **Stage 0.5 kill-test complete, result
+positive** — see §4a and [`docs/stage0.5-kill-test-results.md`](docs/stage0.5-kill-test-results.md).
+Proceeding to Stage 1.
 
 ## 1. Thesis statement
 
@@ -16,6 +18,19 @@ discrete decision space is more reliable and better-calibrated at
 retry/escalate decisions than a tuned heuristic-threshold or learned-router
 baseline, at acceptable added latency/cost — as measured on τ²-bench and
 HiL-Bench.
+
+**Sharpened secondary question (added after external review, see §4a):**
+"EFE beats a heuristic" is a low bar — a well-tuned heuristic or a decision-
+theoretic controller can already do reasonably well, and a skeptical
+reviewer's real question is *what does EFE give you that a sufficiently
+good learned router, or an explicitly hand-derived Bayesian
+value-of-information (VOI) controller, doesn't?* The more defensible claim,
+and the one the Stage 0.5 kill-test was designed to test, is: **EFE
+reproduces near-Bayes-optimal value-of-information behavior automatically
+from a generative-model spec, without hand-deriving the utility/VOI math
+per decision type or domain.** That is a claim about engineering cost and
+transfer, not raw performance, and it is the one the kill-test data
+(§4a) actually supports.
 
 A rigorous **null result** (EFE ≈ baseline on outcomes, wins only on
 interpretability/calibration) is an accepted, publishable fallback outcome —
@@ -104,8 +119,21 @@ tractable (classical AIF is exponential in horizon × state-space size).
 1. **Heuristic threshold** — `escalate ⟺ p_success < τ_conf ∨ action ∈
    irreversible ∨ cost > budget` (current production-style pattern).
 2. **Learned router / contextual bandit** — trained on the same
-   observation features the EFE engine consumes.
-3. **Plain ReAct** — no explicit control-loop reasoning, floor baseline.
+   observation features the EFE engine consumes. **Must have belief-state
+   parity with EFE/VOI** — i.e. access to a running summary of the full
+   observation history, not just the latest reading — or any gap in the
+   comparison is arguably a feature-engineering artifact, not a finding
+   about control mechanisms. (Confirmed necessary by the Stage 0.5
+   kill-test — see §4a.)
+3. **Decision-theoretic / VOI controller** — an explicit Bayesian
+   belief-update + expected-utility computation, the "stronger baseline"
+   added after external review (§4a). At kill-test scale this was
+   hand-derivable exactly; at Stage 3 scale (real LLM agent, unknown true
+   generative model) this becomes an LLM-estimated P(success | context) +
+   hand-coded cost/utility function — include it if feasible, since it's
+   the sharpest test of what EFE's formalism specifically buys over
+   explicit decision theory.
+4. **Plain ReAct** — no explicit control-loop reasoning, floor baseline.
 
 ## 4. Stage-by-stage plan
 
@@ -118,6 +146,47 @@ tractable (classical AIF is exponential in horizon × state-space size).
   changing it later requires an explicit ADR-style note in this repo.
 - Deliverable: `docs/decision-pomdp.md` (frozen schema) + working pymdp
   T-maze/epistemic-chaining demo run locally as an engine sanity check.
+
+### Stage 0.5 — Kill-test (added after external review; completed)
+
+**Why this stage exists:** an external review of this plan (paraphrased):
+*"the biggest issue isn't whether pymdp works, it's — what does EFE give
+you that a sufficiently good learned router doesn't? Don't start the
+20-week project; start a 1-2 week kill-test. If EFE is basically the same
+as a good router with more machinery, that's extremely valuable to
+discover early."* Agreed, and acted on — this stage was inserted before
+any LangGraph/benchmark work, using only what Stage 0 had already built
+(a working pymdp engine, the frozen decision-POMDP shape).
+
+**What was built** (`src/aif_orchestrator/kill_test/`): a tiny synthetic
+3-state / 3-action escalation environment with noisy observations shaped
+like real confidence signals, and five controllers evaluated on 3000
+held-out episodes each: random, heuristic, a Q-learning router, a
+hand-derived Bayesian VOI controller (the "stronger baseline" the review
+specifically asked for), and an EFE controller (pymdp) — VOI and EFE given
+the identical true generative model, so the test is about the *mechanism*,
+not about who has more information.
+
+**Result (full detail: [`docs/stage0.5-kill-test-results.md`](docs/stage0.5-kill-test-results.md)):**
+
+| Controller | avg reward (95% CI) |
+|---|---|
+| heuristic | 0.374 [0.345, 0.403] |
+| learned_router | 0.432 [0.407, 0.456] |
+| voi_decision_theoretic | 0.487 [0.463, 0.510] |
+| efe_active_inference | 0.482 [0.458, 0.505] |
+
+- EFE ≈ VOI (CIs heavily overlap) — EFE reproduces near-Bayes-optimal
+  value-of-information behavior **without hand-deriving the utility
+  math**, which is exactly the sharpened claim in §1.
+- EFE/VOI both beat the router with non-overlapping CIs — a real gap, not
+  noise, concentrated in unnecessary-escalation rate (0.019 vs. 0.042).
+- **Caveat carried into Stage 2:** the router here is memory-limited
+  (features = latest observation + step count, not a running belief) —
+  some of its gap is plausibly a feature-parity issue. Fix before this
+  finding is reported at benchmark scale (§3.6 baseline #2).
+
+**Decision:** proceed to Stage 1.
 
 ### Stage 1 — EFE control node (weeks 3–6)
 - Implement the EFE control node as a LangGraph node: maps
@@ -180,6 +249,10 @@ tractable (classical AIF is exponential in horizon × state-space size).
   re-grades; pin and record grader version for every reported number.
 - **Baseline sandbagging** — router/heuristic baselines must get equal
   tuning effort, tracked explicitly, or the comparison is discounted.
+- **Router belief-state parity** — confirmed a real issue by the Stage 0.5
+  kill-test: a reactive router (features = latest observation only) is not
+  a fair comparison against EFE/VOI's running belief. Give the router
+  baseline an equivalent state summary before Stage 3 results are reported.
 
 ## 6. Why this is still the gap (confirms original framing)
 
@@ -191,6 +264,8 @@ plan still holds as of September 2026.
 
 ## 7. Next action
 
-Stage 0 has not started. First concrete step: create the decision-POMDP
-config schema and get a pymdp demo running locally, before touching
-LangGraph.
+Stage 0 (decision-POMDP schema + pymdp engine sanity check) and Stage 0.5
+(kill-test, positive result) are both complete. Next: Stage 1 — build the
+EFE control node as an actual LangGraph node, wired to real observation
+signals (tool output, confidence, OPA verdict) instead of the kill-test's
+synthetic ones, with `escalate_to_human` routed to `interrupt()`.

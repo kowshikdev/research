@@ -1,0 +1,90 @@
+{
+  "num_eval_episodes": 3000,
+  "state_prior": {
+    "solvable": 0.5,
+    "needs_info": 0.35,
+    "needs_human": 0.15
+  },
+  "results": {
+    "random": {
+      "n_episodes": 3000,
+      "success_rate": 0.31733333333333336,
+      "silent_failure_rate": 0.17333333333333334,
+      "correct_escalation_rate": 0.07766666666666666,
+      "unnecessary_escalation_rate": 0.43166666666666664,
+      "silent_failure_on_needs_human_rate": 0.063,
+      "avg_gathers": 0.478,
+      "avg_steps": 1.478,
+      "avg_reward": -0.16713333333333263,
+      "reward_std": 0.8408262474980933,
+      "reward_ci95_halfwidth": 0.03008858084287899,
+      "reward_ci95_low": -0.19722191417621163,
+      "reward_ci95_high": -0.13704475249045364,
+      "wall_time_sec": 0.03648066520690918
+    },
+    "heuristic": {
+      "n_episodes": 3000,
+      "success_rate": 0.5866666666666667,
+      "silent_failure_rate": 0.13233333333333333,
+      "correct_escalation_rate": 0.12733333333333333,
+      "unnecessary_escalation_rate": 0.15366666666666667,
+      "silent_failure_on_needs_human_rate": 0.017333333333333333,
+      "avg_gathers": 0.3626666666666667,
+      "avg_steps": 1.3626666666666667,
+      "avg_reward": 0.3741666666666625,
+      "reward_std": 0.80837313657217,
+      "reward_ci95_halfwidth": 0.028927261183076414,
+      "reward_ci95_low": 0.34523940548358606,
+      "reward_ci95_high": 0.4030939278497389,
+      "wall_time_sec": 0.03319740295410156
+    },
+    "learned_router": {
+      "n_episodes": 3000,
+      "success_rate": 0.737,
+      "silent_failure_rate": 0.10233333333333333,
+      "correct_escalation_rate": 0.11866666666666667,
+      "unnecessary_escalation_rate": 0.042,
+      "silent_failure_on_needs_human_rate": 0.025666666666666667,
+      "avg_gathers": 2.3303333333333334,
+      "avg_steps": 3.3303333333333334,
+      "avg_reward": 0.43156666666665766,
+      "reward_std": 0.681548517482629,
+      "reward_ci95_halfwidth": 0.024388900474550078,
+      "reward_ci95_low": 0.4071777661921076,
+      "reward_ci95_high": 0.4559555671412077,
+      "wall_time_sec": 0.05816149711608887
+    },
+    "voi_decision_theoretic": {
+      "n_episodes": 3000,
+      "success_rate": 0.757,
+      "silent_failure_rate": 0.1,
+      "correct_escalation_rate": 0.124,
+      "unnecessary_escalation_rate": 0.019,
+      "silent_failure_on_needs_human_rate": 0.018666666666666668,
+      "avg_gathers": 2.1906666666666665,
+      "avg_steps": 3.1906666666666665,
+      "avg_reward": 0.4866333333333528,
+      "reward_std": 0.647259077696172,
+      "reward_ci95_halfwidth": 0.023161868630406576,
+      "reward_ci95_low": 0.4634714647029462,
+      "reward_ci95_high": 0.5097952019637594,
+      "wall_time_sec": 0.18355369567871094
+    },
+    "efe_active_inference": {
+      "n_episodes": 3000,
+      "success_rate": 0.757,
+      "silent_failure_rate": 0.1,
+      "correct_escalation_rate": 0.124,
+      "unnecessary_escalation_rate": 0.019,
+      "silent_failure_on_needs_human_rate": 0.018666666666666668,
+      "avg_gathers": 2.240666666666667,
+      "avg_steps": 3.240666666666667,
+      "avg_reward": 0.4816333333333555,
+      "reward_std": 0.6490658115307797,
+      "reward_ci95_halfwidth": 0.023226521770345912,
+      "reward_ci95_low": 0.4584068115630096,
+      "reward_ci95_high": 0.5048598551037015,
+      "wall_time_sec": 96.51363945007324
+    }
+  }
+}
