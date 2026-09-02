@@ -42,10 +42,20 @@ def run_one(domain: str, agent: str, model: str, num_trials: int, max_concurrenc
     save_to = RESULTS_DIR / f"{domain}__{agent}.json"
     config = TextRunConfig(
         domain=domain, agent=agent, user="user_simulator",
-        llm_agent=model, llm_args_agent={}, llm_user=model, llm_args_user={},
+        llm_agent=model, llm_args_agent={},
+        # The user simulator (tau2's own code, not ours) has no default
+        # max_tokens cap -- it requested the model's full 131072-token
+        # budget per call, which this account's OpenRouter balance can't
+        # cover (~65k available), failing every task outright. Our own
+        # agent side already caps every call explicitly (efe_agent.py),
+        # so only the user side needs this. Same reasoning-token cap
+        # llm_agent.py needs for this model (mandatory reasoning, burns
+        # the whole budget if uncapped).
+        llm_user=model, llm_args_user={"max_tokens": 1000, "extra_body": {"reasoning": {"max_tokens": 300}}},
         task_split_name="base", num_trials=num_trials,
         max_steps=30, max_concurrency=max_concurrency,
         save_to=str(save_to),
+        auto_resume=True,  # a re-run picks up an existing save file instead of an interactive (y/n) prompt, which hangs non-interactively
     )
     print(f"=== {domain} / {agent} ({num_trials} trial(s), max_concurrency={max_concurrency}) ===")
     t0 = time.time()

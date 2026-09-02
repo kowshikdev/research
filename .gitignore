@@ -7,3 +7,8 @@ __pycache__/
 .env
 external/
 uv.lock
+
+# Stage 3 tau2-bench raw simulation dumps (full conversation transcripts,
+# can get large across a real sweep) -- keep only the summary.
+results/stage3_tau2/*
+!results/stage3_tau2/summary.json

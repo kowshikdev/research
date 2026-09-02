@@ -36,7 +36,9 @@ def main():
     for agent in AGENTS:
         config = TextRunConfig(
             domain="mock", agent=agent, user="user_simulator",
-            llm_agent=model, llm_args_agent={}, llm_user=model, llm_args_user={},
+            llm_agent=model, llm_args_agent={},
+            # cap the user simulator's own call -- see run_stage3_eval.py
+            llm_user=model, llm_args_user={"max_tokens": 1000, "extra_body": {"reasoning": {"max_tokens": 300}}},
             max_steps=20,
         )
         print(f"=== {agent} on task {task.id} ===")
