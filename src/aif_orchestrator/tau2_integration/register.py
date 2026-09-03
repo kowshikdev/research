@@ -72,9 +72,32 @@ def _patch_nl_assertions_judge_model() -> None:
     fault; the agent/user model config was correct the whole time.
     Point it at whichever provider vertex_auth.py has already resolved.
     """
+    import re
+
     import tau2.evaluator.evaluator_nl_assertions as nl_eval
     from .vertex_auth import start_token_refresher
 
     vertex_kwargs = start_token_refresher()
     nl_eval.DEFAULT_LLM_NL_ASSERTIONS = "google/gemini-2.5-flash"
     nl_eval.DEFAULT_LLM_NL_ASSERTIONS_ARGS = {"temperature": 0.0, **vertex_kwargs}
+
+    # The judge's caller does json.loads(assistant_message.content)
+    # directly with no error handling, but Gemini (unlike gpt-4.1, the
+    # default this was written against) wraps its JSON answer in a
+    # ```json ... ``` markdown fence even when explicitly asked for raw
+    # JSON, breaking that parse outright (confirmed: reproduced the
+    # exact response). generate is imported by value into this module
+    # (same decoupling as DEFAULT_LLM_NL_ASSERTIONS above), so patch it
+    # here to strip a wrapping fence before returning.
+    _orig_generate = nl_eval.generate
+    _fence_re = re.compile(r"^```(?:json)?\s*\n?(.*?)\n?```\s*$", re.DOTALL)
+
+    def _generate_stripped(*args, **kwargs):
+        resp = _orig_generate(*args, **kwargs)
+        if resp.content:
+            m = _fence_re.match(resp.content.strip())
+            if m:
+                resp.content = m.group(1)
+        return resp
+
+    nl_eval.generate = _generate_stripped
