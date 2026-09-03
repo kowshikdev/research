@@ -15,11 +15,21 @@ Part 2 for the real result: **EFE and VOI diverge here, unlike at
 Stage 0.5's toy scale** — EFE wins on escalation recall, VOI on
 precision and reward. `policy_gate` is now a real OPA evaluation
 (`policies/policy_gate.rego`, `src/aif_orchestrator/opa_policy.py`), not
-the placeholder `allow` earlier stages used. **Stage 3's wiring is also
-done** — tau2-bench cloned and pinned, `EFEAgent` built and smoke-tested
-against the real benchmark's orchestrator (§ Stage 3 below) — but the
-actual evaluation sweep (the real cost center) has not started; that's
-an open scope/budget decision, not a coding task. See
+the placeholder `allow` earlier stages used. **Stage 3's wiring is fully
+done, including tau2 agent wrappers for all 5 controllers** (not just
+EFE — `src/aif_orchestrator/tau2_integration/baseline_agents.py`),
+tau2-bench cloned and pinned, and smoke-tested against the real
+benchmark's orchestrator (§ Stage 3 below); a real gap in how the Stage 3
+router baseline gets trained was found and fixed, and a cost/budget
+estimator now exists (`scripts/estimate_stage3_cost.py`, ~$5 estimated
+for the full default sweep) — but the actual evaluation sweep itself (the
+real cost center) has not started; that's an open scope/budget decision,
+not a coding task. A hard environment constraint was also found: the
+current session's sandbox cannot reach any LLM API provider over the
+network at all (not a credentials issue), so all LLM-dependent
+verification has to happen locally. Full architecture and design
+documentation, with diagrams, now lives in `docs/` (start at
+[`docs/architecture-overview.md`](docs/architecture-overview.md)). See
 [`context/HANDOFF.md`](context/HANDOFF.md) and
 [`context/TODOS.md`](context/TODOS.md) for exactly what's done and
 what's next.

@@ -136,6 +136,19 @@ Run: `.venv/Scripts/python -m aif_orchestrator.baselines.run_model_matched_eval`
 | react | 3.183 [3.105, 3.261] | 0.000 | 0.000 | 0.983 | 0.113 | 2.01 |
 | efe_active_inference | 2.804 [2.723, 2.885] | 0.951 | 0.062 | 0.860 | 0.073 | 1.87 |
 
+> **Reproducibility scope (added after a cross-environment re-run).**
+> Four of these five rows reproduce **bit-exactly** on a different
+> machine and Python version (heuristic, VOI, ReAct, EFE). The
+> `learned_router` row does not: a Linux/Python 3.11 re-run gives
+> avg reward 3.434 and correct escalation 0.236 against the 3.393 /
+> 0.255 above. The router is the only controller with trained state,
+> and its training is bit-deterministic *within* an environment — so
+> quote its exact figures together with the environment that produced
+> them, and expect ~1% drift on reward across machines. No qualitative
+> conclusion below changes: the router still has by far the worst
+> correct-escalation rate and the highest raw reward either way. Full
+> detail: `known-issues-and-gotchas.md` #12.
+
 ### Findings
 
 **EFE has the best correct-escalation rate of all five (0.951, beating

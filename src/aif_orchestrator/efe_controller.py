@@ -165,6 +165,15 @@ class EFEControlNode:
     instance persists belief across turns of a single task/conversation;
     call `decide()` once per orchestrator turn."""
 
+    # Every baseline in baselines/ carries a `name`, and graph.py's
+    # make_control_step logs `getattr(cls, "name", cls.__name__)` -- so
+    # without this, EFE's decision records were labelled "EFEControlNode"
+    # while the baselines' were labelled "heuristic"/"voi_decision_theoretic"/
+    # etc. That inconsistency lands in the decision logs the Stage 5
+    # interpretability analysis reads. This is the same key
+    # run_model_matched_eval.py already reports EFE's results under.
+    name = "efe_active_inference"
+
     def __init__(self, prior=None):
         self.belief = list(prior) if prior is not None else list(D_PRIOR)
 
