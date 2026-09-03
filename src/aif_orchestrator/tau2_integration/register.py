@@ -91,13 +91,20 @@ def _patch_nl_assertions_judge_model() -> None:
     # here to strip a wrapping fence before returning.
     _orig_generate = nl_eval.generate
     _fence_re = re.compile(r"^```(?:json)?\s*\n?(.*?)\n?```\s*$", re.DOTALL)
+    # Gemini also occasionally emits a trailing comma before a closing
+    # `}`/`]` (valid in JSON5, not in strict JSON) -- confirmed: a real
+    # task hit "Expecting property name enclosed in double quotes" at
+    # the exact position of such a comma. Strip it too.
+    _trailing_comma_re = re.compile(r",(\s*[}\]])")
 
     def _generate_stripped(*args, **kwargs):
         resp = _orig_generate(*args, **kwargs)
         if resp.content:
-            m = _fence_re.match(resp.content.strip())
+            content = resp.content.strip()
+            m = _fence_re.match(content)
             if m:
-                resp.content = m.group(1)
+                content = m.group(1)
+            resp.content = _trailing_comma_re.sub(r"\1", content)
         return resp
 
     nl_eval.generate = _generate_stripped
