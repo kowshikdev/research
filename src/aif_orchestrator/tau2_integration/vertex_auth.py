@@ -68,6 +68,16 @@ def start_token_refresher() -> dict:
         VERTEX_KWARGS["custom_llm_provider"] = "openai"
         VERTEX_KWARGS["api_base"] = _endpoint_url(project_id, region)
         VERTEX_KWARGS["api_key"] = _fetch_token()
+        # tau2's own generate() unconditionally sets num_retries to its
+        # default, and litellm's internal retry wrapper has been observed
+        # (with Groq, same symptom) to drop an explicit custom_llm_provider/
+        # api_key override on retried attempts -- a single, no-retry-needed
+        # call always succeeds, but any transient failure that triggers
+        # litellm's own retry surfaces as "Missing credentials" on the
+        # retried attempt. Disabling litellm's internal retry and relying
+        # on tau2's task-level retry (which rebuilds the call from scratch,
+        # not a litellm-internal retry) avoids the bug entirely.
+        VERTEX_KWARGS["num_retries"] = 0
 
         if _refresher_started:
             return VERTEX_KWARGS
