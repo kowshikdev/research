@@ -51,4 +51,30 @@ def register():
     registry.register_agent_factory(create_router_agent, "router_agent")
     registry.register_agent_factory(create_voi_agent, "voi_agent")
     registry.register_agent_factory(create_react_agent, "react_agent")
+
+    _patch_nl_assertions_judge_model()
     _registered = True
+
+
+def _patch_nl_assertions_judge_model() -> None:
+    """tau2's NL_ASSERTION reward grading (part of every task's reward,
+    not something a run config can opt out of) is hardcoded to
+    "gpt-4.1-2025-04-14" via tau2.config.DEFAULT_LLM_NL_ASSERTIONS /
+    DEFAULT_LLM_NL_ASSERTIONS_ARGS, which tau2.evaluator.
+    evaluator_nl_assertions imports by value at module load time (`from
+    tau2.config import DEFAULT_LLM_NL_ASSERTIONS` binds a NEW name in
+    that module's own namespace, decoupled from tau2.config's) -- so
+    patching tau2.config's copy after import does nothing, this module's
+    copy must be patched directly. This call needs real OpenAI
+    credentials we never configured, and was the actual source of every
+    "Missing credentials" failure chased across the OpenRouter/Groq/
+    Vertex provider switches -- none of those were ever this call's
+    fault; the agent/user model config was correct the whole time.
+    Point it at whichever provider vertex_auth.py has already resolved.
+    """
+    import tau2.evaluator.evaluator_nl_assertions as nl_eval
+    from .vertex_auth import start_token_refresher
+
+    vertex_kwargs = start_token_refresher()
+    nl_eval.DEFAULT_LLM_NL_ASSERTIONS = "google/gemini-2.5-flash"
+    nl_eval.DEFAULT_LLM_NL_ASSERTIONS_ARGS = {"temperature": 0.0, **vertex_kwargs}
