@@ -121,3 +121,18 @@ def overlay_live_kwargs(kwargs: dict) -> dict:
     the kwargs threaded through tau2's config machinery have gone.
     """
     return {**kwargs, **VERTEX_KWARGS}
+
+
+def force_refresh() -> None:
+    """Fetches a new token immediately, outside the background thread's
+    interval -- for use when a call just got a 401 and waiting up to
+    REFRESH_INTERVAL_SECONDS for the next scheduled refresh isn't worth
+    it (observed: a burst of ~5 consecutive real tasks all failed with
+    AuthenticationError while the *same* gcloud-issued token, tested
+    moments later with a direct curl call, worked fine -- a transient
+    Vertex-side/OAuth-refresh hiccup, not a bad token per se, but cheap
+    to route around by just forcing an immediate re-fetch)."""
+    try:
+        VERTEX_KWARGS["api_key"] = _fetch_token()
+    except Exception:
+        pass

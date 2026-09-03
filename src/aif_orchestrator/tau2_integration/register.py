@@ -98,9 +98,19 @@ def _patch_nl_assertions_judge_model() -> None:
     _trailing_comma_re = re.compile(r",(\s*[}\]])")
 
     def _generate_stripped(*args, **kwargs):
-        from .vertex_auth import overlay_live_kwargs
+        from litellm.exceptions import AuthenticationError as LiteLLMAuthenticationError
+
+        from .vertex_auth import force_refresh, overlay_live_kwargs
         kwargs = overlay_live_kwargs(kwargs)
-        resp = _orig_generate(*args, **kwargs)
+        try:
+            resp = _orig_generate(*args, **kwargs)
+        except LiteLLMAuthenticationError:
+            # See efe_agent.py's generate wrapper for the confirmed
+            # symptom/reasoning: a transient Vertex-side/OAuth-refresh
+            # hiccup, not a genuinely bad token -- one forced re-fetch
+            # usually clears it.
+            force_refresh()
+            resp = _orig_generate(*args, **overlay_live_kwargs(kwargs))
         if resp.content:
             content = resp.content.strip()
             m = _fence_re.match(content)
@@ -151,11 +161,17 @@ def _patch_user_simulator_live_token() -> None:
     frozen config copy was stale, not each token individually bad).
     """
     import tau2.user.user_simulator as user_sim
-    from .vertex_auth import overlay_live_kwargs
+    from .vertex_auth import force_refresh, overlay_live_kwargs
 
     _orig_generate = user_sim.generate
 
     def _generate_live(*args, **kwargs):
-        return _orig_generate(*args, **overlay_live_kwargs(kwargs))
+        from litellm.exceptions import AuthenticationError as LiteLLMAuthenticationError
+
+        try:
+            return _orig_generate(*args, **overlay_live_kwargs(kwargs))
+        except LiteLLMAuthenticationError:
+            force_refresh()
+            return _orig_generate(*args, **overlay_live_kwargs(kwargs))
 
     user_sim.generate = _generate_live

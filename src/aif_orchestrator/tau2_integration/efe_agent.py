@@ -48,6 +48,7 @@ from tau2.data_model.message import (
     ToolMessage,
     UserMessage,
 )
+from litellm.exceptions import AuthenticationError as LiteLLMAuthenticationError
 from litellm.exceptions import BadRequestError as LiteLLMBadRequestError
 from tau2.environment.tool import Tool
 from tau2.utils.llm_utils import generate as _tau2_generate
@@ -94,11 +95,24 @@ def generate(*, messages: list, **kwargs) -> "AssistantMessage":
     lifetime, on a stretch of consecutive tasks -- i.e. the config's
     frozen copy going stale, not each token being individually bad).
     """
-    from .vertex_auth import overlay_live_kwargs
+    from .vertex_auth import force_refresh, overlay_live_kwargs
 
     kwargs = overlay_live_kwargs(kwargs)
     try:
-        return _tau2_generate(messages=messages, **kwargs)
+        try:
+            return _tau2_generate(messages=messages, **kwargs)
+        except LiteLLMAuthenticationError:
+            # Observed: a burst of consecutive real tasks all failed
+            # with 401 while the same gcloud-issued token, tested
+            # moments later via a direct curl call, worked fine -- a
+            # transient Vertex-side/OAuth-refresh hiccup rather than a
+            # genuinely bad token. One immediate forced re-fetch (not
+            # waiting for the background thread's interval) usually
+            # clears it; if not, let it propagate to tau2's task-level
+            # retry.
+            force_refresh()
+            kwargs = overlay_live_kwargs(kwargs)
+            return _tau2_generate(messages=messages, **kwargs)
     except LiteLLMBadRequestError as e:
         if "tool_use_failed" not in str(e):
             raise
