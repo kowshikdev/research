@@ -98,6 +98,8 @@ def _patch_nl_assertions_judge_model() -> None:
     _trailing_comma_re = re.compile(r",(\s*[}\]])")
 
     def _generate_stripped(*args, **kwargs):
+        from .vertex_auth import overlay_live_kwargs
+        kwargs = overlay_live_kwargs(kwargs)
         resp = _orig_generate(*args, **kwargs)
         if resp.content:
             content = resp.content.strip()
@@ -133,3 +135,27 @@ def _patch_nl_assertions_judge_model() -> None:
                     raise
 
     nl_eval.NLAssertionsEvaluator.evaluate_nl_assertions = classmethod(_evaluate_impl)
+
+    _patch_user_simulator_live_token()
+
+
+def _patch_user_simulator_live_token() -> None:
+    """Same staleness problem as the judge model, on the user-simulator
+    side: tau2.user.user_simulator imports `generate` by value too, and
+    its self.llm_args is deepcopied once per UserSimulator construction
+    from a TextRunConfig.llm_args_user that was frozen at the start of
+    a whole domain/agent run -- so its api_key can go stale mid-run the
+    same way the agent side's did (see efe_agent.py's generate wrapper
+    for the confirmed symptom: consecutive real tasks hitting 401
+    ACCESS_TOKEN_TYPE_UNSUPPORTED well before token expiry, because the
+    frozen config copy was stale, not each token individually bad).
+    """
+    import tau2.user.user_simulator as user_sim
+    from .vertex_auth import overlay_live_kwargs
+
+    _orig_generate = user_sim.generate
+
+    def _generate_live(*args, **kwargs):
+        return _orig_generate(*args, **overlay_live_kwargs(kwargs))
+
+    user_sim.generate = _generate_live

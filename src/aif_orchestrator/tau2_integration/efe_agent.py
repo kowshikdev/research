@@ -84,7 +84,19 @@ def generate(*, messages: list, **kwargs) -> "AssistantMessage":
     limits) never fires for it and the exception propagates uncaught.
     One retry with an explicit nudge, then fall back to a plain-text
     message rather than crash the whole simulation over one bad call.
+
+    Also overlays the live Vertex token on every call (vertex_auth.py)
+    -- kwargs threaded through here originated from self.llm_args,
+    itself deepcopied from a TextRunConfig frozen once per domain/agent
+    run, so it can carry a stale api_key for a token refreshed since
+    that agent was constructed (confirmed: real sweep tasks hit 401
+    ACCESS_TOKEN_TYPE_UNSUPPORTED well before the token's nominal
+    lifetime, on a stretch of consecutive tasks -- i.e. the config's
+    frozen copy going stale, not each token being individually bad).
     """
+    from .vertex_auth import overlay_live_kwargs
+
+    kwargs = overlay_live_kwargs(kwargs)
     try:
         return _tau2_generate(messages=messages, **kwargs)
     except LiteLLMBadRequestError as e:

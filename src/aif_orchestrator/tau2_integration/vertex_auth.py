@@ -28,7 +28,11 @@ import subprocess
 import threading
 import time
 
-REFRESH_INTERVAL_SECONDS = 45 * 60  # tokens live ~60min; refresh well inside that
+REFRESH_INTERVAL_SECONDS = 10 * 60
+# Tokens live ~60min in theory, but observed going bad (401
+# ACCESS_TOKEN_TYPE_UNSUPPORTED, consistent across retries) well before
+# that in a real sweep -- shorter interval bounds how long a bad token
+# can strand a run before the background thread replaces it.
 
 
 def _fetch_token() -> str:
@@ -99,3 +103,21 @@ def start_token_refresher() -> dict:
         threading.Thread(target=_loop, daemon=True, name="vertex-token-refresher").start()
 
     return VERTEX_KWARGS
+
+
+def overlay_live_kwargs(kwargs: dict) -> dict:
+    """Returns kwargs with VERTEX_KWARGS's current values merged on top.
+
+    Passing `dict(VERTEX_KWARGS)` into a tau2 TextRunConfig/agent gets
+    deepcopied on the way in (confirmed: pydantic does not preserve
+    dict object identity across model construction), which freezes the
+    api_key at whatever value it had when that agent/config was built --
+    for a domain/agent run spanning many tasks, later tasks silently
+    keep using an old token even after the background thread has
+    refreshed VERTEX_KWARGS. Called at the point of the actual
+    completion() call (efe_agent.py's generate wrapper, and the
+    NL-assertion-judge/user-simulator patches in register.py), this
+    always applies whatever is currently live, regardless of how stale
+    the kwargs threaded through tau2's config machinery have gone.
+    """
+    return {**kwargs, **VERTEX_KWARGS}
