@@ -108,3 +108,28 @@ def _patch_nl_assertions_judge_model() -> None:
         return resp
 
     nl_eval.generate = _generate_stripped
+
+    # Belt-and-suspenders: the fence/comma cleanup above doesn't cover
+    # every way Gemini can produce syntactically invalid JSON (confirmed
+    # empirically -- the exact same task succeeded on one run and hit a
+    # *different* JSONDecodeError position on another, so this is
+    # content-dependent LLM output variance, not a single fixed pattern
+    # worth regexing around). json.loads(assistant_message.content)
+    # happens inside the evaluator, not something our generate patch
+    # can reach -- wrap the classmethod itself instead: on a parse
+    # failure, just re-run the whole judge call (a fresh generation is
+    # very likely to come back parseable) rather than let one grader
+    # glitch fail the entire task's reward.
+    import json
+
+    _orig_evaluate = nl_eval.NLAssertionsEvaluator.evaluate_nl_assertions.__func__
+
+    def _evaluate_impl(cls, trajectory, nl_assertions):
+        for attempt in range(3):
+            try:
+                return _orig_evaluate(cls, trajectory, nl_assertions)
+            except json.JSONDecodeError:
+                if attempt == 2:
+                    raise
+
+    nl_eval.NLAssertionsEvaluator.evaluate_nl_assertions = classmethod(_evaluate_impl)
