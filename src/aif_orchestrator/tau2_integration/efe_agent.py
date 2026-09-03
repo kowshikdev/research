@@ -32,6 +32,7 @@ all of them (baseline_agents.py registers factories for the other
 four); only EFEAgent's factory/name are kept here for backward
 compatibility with the Stage 3 smoke test.
 """
+import uuid
 from typing import Generic, Optional, TypeVar
 
 from pydantic import BaseModel
@@ -232,8 +233,7 @@ class ControlNodeAgent(
                 UserMessage.text(content=transcript or "(no transcript yet)"),
             ],
             call_name="control_node_confidence",
-            max_tokens=150,
-            extra_body={"reasoning_effort": "low"},
+            max_tokens=250,
             **self.llm_args,
         )
         text = (resp.content or "").strip().lower()
@@ -260,8 +260,7 @@ class ControlNodeAgent(
             state.messages.append(message)
             assistant_message = generate(
                 model=self.llm, tools=self.tools, messages=state.system_messages + state.messages,
-                call_name="control_node_agent_first_turn", max_tokens=600,
-                extra_body={"reasoning_effort": "low"},
+                call_name="control_node_agent_first_turn", max_tokens=1000,
                 **self.llm_args,
             )
             assistant_message = _ensure_non_empty(assistant_message)
@@ -288,8 +287,7 @@ class ControlNodeAgent(
                 state.messages.append(message)
             assistant_message = generate(
                 model=self.llm, messages=state.system_messages + state.messages,
-                call_name="control_node_agent_post_escalation", max_tokens=600,
-                extra_body={"reasoning_effort": "low"},
+                call_name="control_node_agent_post_escalation", max_tokens=1000,
                 **self.llm_args,
             )
             if not assistant_message.content and not assistant_message.is_tool_call():
@@ -326,7 +324,10 @@ class ControlNodeAgent(
             summary = self._build_transfer_summary(state)
             assistant_message = AssistantMessage.text(
                 content=None,
-                tool_calls=[ToolCall(name=TRANSFER_TOOL_NAME, arguments={"summary": summary})],
+                tool_calls=[ToolCall(
+                    id=f"call_{uuid.uuid4().hex[:24]}",
+                    name=TRANSFER_TOOL_NAME, arguments={"summary": summary},
+                )],
             )
             state.escalated = True
         else:
@@ -336,8 +337,7 @@ class ControlNodeAgent(
                 messages = messages + [SystemMessage(role="system", content=steer)]
             assistant_message = generate(
                 model=self.llm, tools=self.tools, messages=messages,
-                call_name="control_node_agent_response", max_tokens=600,
-                extra_body={"reasoning_effort": "low"},
+                call_name="control_node_agent_response", max_tokens=1000,
                 **self.llm_args,
             )
             assistant_message = _ensure_non_empty(assistant_message)

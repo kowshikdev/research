@@ -13,12 +13,9 @@ import os
 from dotenv import load_dotenv
 
 load_dotenv()
-# tau2-bench (LiteLLM) reads OPENROUTER_API_KEY; our own .env uses
-# LLM_API_KEY (llm_agent.py's own naming) -- map one to the other rather
-# than keeping two separate secrets for the same key.
-os.environ.setdefault("OPENROUTER_API_KEY", os.environ.get("LLM_API_KEY", ""))
 
 from . import register  # noqa: E402 -- registers agents before any tau2.run call
+from .vertex_auth import start_token_refresher  # noqa: E402
 
 register()
 
@@ -29,25 +26,17 @@ AGENTS = ["efe_agent", "heuristic_agent", "router_agent", "voi_agent", "react_ag
 
 
 def main():
-    model = os.environ["LLM_MODEL"]
-    # see run_stage3_eval.py: litellm mis-parses "groq/<vendor>/<model>"
-    # strings, so pass the model id bare plus an explicit provider/key.
-    groq_kwargs = {
-        "custom_llm_provider": "groq",
-        "api_key": os.environ["GROQ_API_KEY"],
-        "api_base": "https://api.groq.com/openai/v1",
-    }
+    model = "google/gemini-2.5-flash"
+    vertex_kwargs = dict(start_token_refresher())
     tasks = get_tasks("mock", num_tasks=1)
     task = tasks[0]
 
     for agent in AGENTS:
         config = TextRunConfig(
             domain="mock", agent=agent, user="user_simulator",
-            llm_agent=model, llm_args_agent=dict(groq_kwargs),
+            llm_agent=model, llm_args_agent=dict(vertex_kwargs),
             # cap the user simulator's own call -- see run_stage3_eval.py
-            llm_user=model, llm_args_user={
-                "max_tokens": 1000, "extra_body": {"reasoning_effort": "low"}, **groq_kwargs,
-            },
+            llm_user=model, llm_args_user={"max_tokens": 1000, **vertex_kwargs},
             max_steps=20,
         )
         print(f"=== {agent} on task {task.id} ===")

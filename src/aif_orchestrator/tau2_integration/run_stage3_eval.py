@@ -22,11 +22,9 @@ from pathlib import Path
 from dotenv import load_dotenv
 
 load_dotenv()
-# tau2-bench (LiteLLM) reads OPENROUTER_API_KEY; our own .env uses
-# LLM_API_KEY (llm_agent.py's own naming).
-os.environ.setdefault("OPENROUTER_API_KEY", os.environ.get("LLM_API_KEY", ""))
 
 from . import register  # noqa: E402
+from .vertex_auth import start_token_refresher  # noqa: E402
 
 register()
 
@@ -40,34 +38,21 @@ AGENTS = ["efe_agent", "heuristic_agent", "router_agent", "voi_agent", "react_ag
 
 def run_one(domain: str, agent: str, model: str, num_trials: int, max_concurrency: int) -> dict:
     save_to = RESULTS_DIR / f"{domain}__{agent}.json"
-    # litellm mis-parses a "groq/<vendor>/<model>" string: it treats the
-    # embedded second slash as its own provider/model split and silently
-    # routes to "openai" instead of "groq" (confirmed: reproduces even
-    # at concurrency 1, with a bare litellm.get_llm_provider() call
-    # showing the correct groq resolution but the real completion()
-    # calls still erroring "Missing credentials" ~most of the time).
-    # Passing the model id bare (no groq/ prefix) plus an explicit
-    # custom_llm_provider/api_key/api_base sidesteps the string-parsing
-    # path entirely.
-    groq_kwargs = {
-        "custom_llm_provider": "groq",
-        "api_key": os.environ["GROQ_API_KEY"],
-        "api_base": "https://api.groq.com/openai/v1",
-    }
+    # tau2's LLMConfigMixin deepcopies llm_args at agent construction, so
+    # the token is frozen for this run_one() call's duration, not
+    # hot-reloaded mid-sweep -- fine given one domain/agent (~114 tasks)
+    # finishes in minutes, well under vertex_auth's 45min refresh window.
+    # Grabbing a fresh copy here on every call (each domain/agent in
+    # main()'s loop) means a long --domain all run still picks up a
+    # refreshed token between agents even though not mid-agent.
+    vertex_kwargs = dict(start_token_refresher())
     config = TextRunConfig(
         domain=domain, agent=agent, user="user_simulator",
-        llm_agent=model, llm_args_agent=dict(groq_kwargs),
+        llm_agent=model, llm_args_agent=dict(vertex_kwargs),
         # The user simulator (tau2's own code, not ours) has no default
-        # max_tokens cap -- it requested the model's full 131072-token
-        # budget per call, which this account's OpenRouter balance can't
-        # cover (~65k available), failing every task outright. Our own
-        # agent side already caps every call explicitly (efe_agent.py),
-        # so only the user side needs this. Same reasoning-token cap
-        # llm_agent.py needs for this model (mandatory reasoning, burns
-        # the whole budget if uncapped).
-        llm_user=model, llm_args_user={
-            "max_tokens": 1000, "extra_body": {"reasoning_effort": "low"}, **groq_kwargs,
-        },
+        # max_tokens cap -- see docs/known-issues-and-gotchas.md. Our own
+        # agent side already caps every call explicitly (efe_agent.py).
+        llm_user=model, llm_args_user={"max_tokens": 1000, **vertex_kwargs},
         task_split_name="base", num_trials=num_trials,
         max_steps=30, max_concurrency=max_concurrency,
         save_to=str(save_to),
@@ -103,11 +88,11 @@ def main():
     parser.add_argument("--domain", choices=DOMAINS + ["all"], default="retail")
     parser.add_argument("--agents", nargs="+", default=AGENTS, choices=AGENTS)
     parser.add_argument("--num-trials", type=int, default=1)
-    parser.add_argument("--max-concurrency", type=int, default=2)
+    parser.add_argument("--max-concurrency", type=int, default=6)
     args = parser.parse_args()
 
     domains = DOMAINS if args.domain == "all" else [args.domain]
-    model = os.environ["LLM_MODEL"]
+    model = "google/gemini-2.5-flash"
     RESULTS_DIR.mkdir(parents=True, exist_ok=True)
 
     summary_path = RESULTS_DIR / "summary.json"
