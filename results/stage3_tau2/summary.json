@@ -35,25 +35,25 @@
     "elapsed_sec": 0.5692424774169922
   },
   "airline/heuristic_agent": {
-    "n_simulations": 49,
-    "avg_reward": 0.4897959183673469,
-    "pass_1": 0.4897959183673469,
+    "n_simulations": 50,
+    "avg_reward": 0.48,
+    "pass_1": 0.48,
     "escalations": 19,
-    "elapsed_sec": 2849.085242986679
+    "elapsed_sec": 92.97942972183228
   },
   "airline/router_agent": {
     "n_simulations": 50,
     "avg_reward": 0.52,
     "pass_1": 0.52,
     "escalations": 51,
-    "elapsed_sec": 1759.6800441741943
+    "elapsed_sec": 0.29070234298706055
   },
   "airline/voi_agent": {
     "n_simulations": 50,
     "avg_reward": 0.46,
     "pass_1": 0.46,
     "escalations": 51,
-    "elapsed_sec": 635.4951372146606
+    "elapsed_sec": 0.25907158851623535
   },
   "retail/react_agent": {
     "n_simulations": 110,
