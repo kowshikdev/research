@@ -48,6 +48,13 @@
     "escalations": 51,
     "elapsed_sec": 1759.6800441741943
   },
+  "airline/voi_agent": {
+    "n_simulations": 50,
+    "avg_reward": 0.46,
+    "pass_1": 0.46,
+    "escalations": 51,
+    "elapsed_sec": 635.4951372146606
+  },
   "retail/react_agent": {
     "n_simulations": 110,
     "avg_reward": 0.2818181818181818,
