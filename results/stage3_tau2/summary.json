@@ -41,6 +41,13 @@
     "escalations": 19,
     "elapsed_sec": 2849.085242986679
   },
+  "airline/router_agent": {
+    "n_simulations": 50,
+    "avg_reward": 0.52,
+    "pass_1": 0.52,
+    "escalations": 51,
+    "elapsed_sec": 1759.6800441741943
+  },
   "retail/react_agent": {
     "n_simulations": 110,
     "avg_reward": 0.2818181818181818,
