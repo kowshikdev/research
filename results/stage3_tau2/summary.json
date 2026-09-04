@@ -4,6 +4,27 @@
     "avg_reward": 0.043859649122807015,
     "pass_1": 0.043859649122807015,
     "escalations": 114,
-    "elapsed_sec": 0.18651318550109863
+    "elapsed_sec": 0.26479673385620117
+  },
+  "retail/heuristic_agent": {
+    "n_simulations": 114,
+    "avg_reward": 0.2719298245614035,
+    "pass_1": 0.2719298245614035,
+    "escalations": 15,
+    "elapsed_sec": 0.34949517250061035
+  },
+  "retail/router_agent": {
+    "n_simulations": 114,
+    "avg_reward": 0.24561403508771928,
+    "pass_1": 0.24561403508771928,
+    "escalations": 27,
+    "elapsed_sec": 0.34639811515808105
+  },
+  "retail/voi_agent": {
+    "n_simulations": 114,
+    "avg_reward": 0.3333333333333333,
+    "pass_1": 0.3333333333333333,
+    "escalations": 19,
+    "elapsed_sec": 2963.7063257694244
   }
 }

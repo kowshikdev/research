@@ -15,13 +15,21 @@ already-proven-working path: treat the endpoint as a generic
 OpenAI-compatible API (`custom_llm_provider="openai"`) with an
 explicit bearer token as `api_key`.
 
-`gcloud auth print-access-token` tokens expire in ~1 hour, well inside
-a real sweep's runtime, so a background thread refreshes the token in
-place inside a shared, mutable kwargs dict -- callers spread
-`**VERTEX_KWARGS` into each `generate()`/completion call, and because
-dict unpacking reads current values at call time (not at whatever
-point the dict reference was captured), each call picks up a fresh
-token without needing to touch call sites again after a refresh.
+Access tokens expire in ~1 hour, well inside a real sweep's runtime,
+so a background thread refreshes the token in place inside a shared,
+mutable kwargs dict -- callers spread `**VERTEX_KWARGS` into each
+`generate()`/completion call, and because dict unpacking reads current
+values at call time (not at whatever point the dict reference was
+captured), each call picks up a fresh token without needing to touch
+call sites again after a refresh.
+
+Two token sources, picked automatically:
+- GOOGLE_APPLICATION_CREDENTIALS set (a service-account JSON key path)
+  -> mint tokens via google-auth, refreshed in-process. This is the
+  only option that works headless (a cloud/CI session, no interactive
+  login) -- it's what a Claude Code cloud session needs.
+- Otherwise -> `gcloud auth print-access-token` (this machine's
+  interactive user login). What local development has been using.
 """
 import os
 import subprocess
@@ -35,7 +43,7 @@ REFRESH_INTERVAL_SECONDS = 10 * 60
 # can strand a run before the background thread replaces it.
 
 
-def _fetch_token() -> str:
+def _fetch_token_gcloud() -> str:
     # shell=True: on Windows, "gcloud" resolves to gcloud.cmd, which
     # subprocess can't exec directly without going through a shell.
     result = subprocess.run(
@@ -43,6 +51,29 @@ def _fetch_token() -> str:
         shell=True, capture_output=True, text=True, check=True,
     )
     return result.stdout.strip()
+
+
+_service_account_creds = None
+
+
+def _fetch_token_service_account() -> str:
+    global _service_account_creds
+    import google.auth.transport.requests
+    from google.oauth2 import service_account
+
+    if _service_account_creds is None:
+        _service_account_creds = service_account.Credentials.from_service_account_file(
+            os.environ["GOOGLE_APPLICATION_CREDENTIALS"],
+            scopes=["https://www.googleapis.com/auth/cloud-platform"],
+        )
+    _service_account_creds.refresh(google.auth.transport.requests.Request())
+    return _service_account_creds.token
+
+
+def _fetch_token() -> str:
+    if os.environ.get("GOOGLE_APPLICATION_CREDENTIALS"):
+        return _fetch_token_service_account()
+    return _fetch_token_gcloud()
 
 
 def _endpoint_url(project_id: str, region: str) -> str:
