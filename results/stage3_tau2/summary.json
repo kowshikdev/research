@@ -27,18 +27,18 @@
     "escalations": 19,
     "elapsed_sec": 2963.7063257694244
   },
-  "airline/efe_agent": {
-    "n_simulations": 50,
-    "avg_reward": 0.46,
-    "pass_1": 0.46,
-    "escalations": 50,
-    "elapsed_sec": 329.89741945266724
-  },
   "retail/react_agent": {
     "n_simulations": 110,
     "avg_reward": 0.2818181818181818,
     "pass_1": 0.2818181818181818,
     "escalations": 22,
     "elapsed_sec": 9290.075575113297
+  },
+  "airline/efe_agent": {
+    "n_simulations": 50,
+    "avg_reward": 0.46,
+    "pass_1": 0.46,
+    "escalations": 50,
+    "elapsed_sec": 329.89741945266724
   }
 }
