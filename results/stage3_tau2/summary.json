@@ -61,5 +61,12 @@
     "pass_1": 0.2818181818181818,
     "escalations": 22,
     "elapsed_sec": 9290.075575113297
+  },
+  "airline/react_agent": {
+    "n_simulations": 50,
+    "avg_reward": 0.4,
+    "pass_1": 0.4,
+    "escalations": 24,
+    "elapsed_sec": 2500.2054147720337
   }
 }
