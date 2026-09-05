@@ -52,8 +52,8 @@
     "n_simulations": 50,
     "avg_reward": 0.46,
     "pass_1": 0.46,
-    "escalations": 51,
-    "elapsed_sec": 0.25907158851623535
+    "escalations": 50,
+    "elapsed_sec": 113.78912210464478
   },
   "retail/react_agent": {
     "n_simulations": 114,
