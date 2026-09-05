@@ -82,5 +82,12 @@
     "pass_1": 0.10909090909090909,
     "escalations": 41,
     "elapsed_sec": 1208.5029497146606
+  },
+  "telecom/router_agent": {
+    "n_simulations": 114,
+    "avg_reward": 0.017543859649122806,
+    "pass_1": 0.017543859649122806,
+    "escalations": 10,
+    "elapsed_sec": 1235.7372560501099
   }
 }
