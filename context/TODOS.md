@@ -26,40 +26,30 @@ how everything fits together. This file is the actionable checklist.
 - [x] **CI** (`.github/workflows/ci.yml`) — tests on Python 3.11 + 3.13 with an explicit wrong-`pymdp`-package check, `--quick` pipeline on every PR, and a nightly full pipeline that uploads `results/` (the runs that actually reproduce the cited numbers).
 - [x] **`ROADMAP.md`** — the medium-horizon plan between `RESEARCH_PLAN.md` and this file: milestones, decision gates (including the null-result and "epistemic term never mattered" branches), what's deferred and why.
 - [x] **Consistent controller naming** — `EFEControlNode` had no `name` attribute while all four baselines did, so decision logs labelled it `"EFEControlNode"` against the baselines' `"heuristic"`/`"voi_decision_theoretic"`. Now `name = "efe_active_inference"`, matching the key `run_model_matched_eval.py` already reports it under. Found by a test, not by reading.
+- [x] **The actual Stage 3 evaluation sweep — done.** All 5 controllers × all 3 domains (retail/airline/telecom, 15 combinations) evaluated against real tau2-bench via Vertex AI (`gemini-2.5-flash`, GCP service-account credentials, headless — `vertex_auth.py`), not OpenRouter (the network constraint below was worked around this way, not resolved on OpenRouter's side). Results: `results/stage3_tau2/summary.json`. A real escalation-rate contamination bug was found mid-sweep and fixed in two layers (schema exclusion + `_strip_disallowed_transfer` post-generation filter in `efe_agent.py`) — see `docs/known-issues-and-gotchas.md` #13; retail and airline were re-run under the fix, telecom was run for the first time already fixed. One anomaly (`retail/voi_agent`'s escalation count swinging 19→113 between the original and re-run sweeps) is flagged as an open unknown, investigated and ruled out as caused by the fix itself but not otherwise explained.
 
 ## Done — needs real LLM API access, verified in an earlier local session
 
 - [x] **Stage 1c**: real tool-calling LLM agent step (`src/aif_orchestrator/llm_agent.py`, `graph.py`'s `llm_agent_step`). Verified: `.venv/Scripts/python -m aif_orchestrator.graph --llm`.
 - [x] **Stage 3 wiring**: tau2-bench cloned and pinned (commit `a2c0247`, tag `tau2==1.0.1`), `ControlNodeAgent` built generically (all 5 agents share it), registered, smoke-tested against a real `mock`-domain task (reward 1.0). Two real integration bugs caught and fixed (turn-0 cold start, `escalate_to_human` re-triggering — see `docs/known-issues-and-gotchas.md` #8-9). See `docs/tau2-bench-integration.md`.
 
-## Environment constraint discovered this pass — read before assuming something is blocked on credentials alone
+## Environment constraint discovered earlier — resolved via Vertex, not OpenRouter
 
 This cloud sandbox's network egress is locked to a fixed allowlist
 (Anthropic's own API, PyPI/npm/crates.io/Go-proxy) — `openrouter.ai` is
 **not** on it, and a call to it fails at the proxy layer
 (`403 Forbidden` on the CONNECT) regardless of API key correctness. This
 is architectural, not a missing-credential problem — see
-`docs/known-issues-and-gotchas.md` #11. Any LLM-dependent verification
-(Stage 1c, Stage 2 baseline demos against a live model, Stage 3 smoke
-test or sweep, and the router fix's full-chain verification above) has
-to happen locally, where network access is open.
-
-An OpenRouter key **was** provided during this pass and is stored in
-`.env` (gitignored, never committed, never appeared in any command
-output) with `LLM_MODEL=deepseek/deepseek-v4-flash` (verified as the
-real, current, cheap slug — $0.098/$0.196 per MTok input/output) — ready
-to use the moment this repo runs somewhere with open network access.
+`docs/known-issues-and-gotchas.md` #11. **Resolution actually used:**
+Vertex AI's own API host is reachable from this sandbox, so the Stage 3
+sweep ran there instead (`gemini-2.5-flash` via GCP service-account
+credentials, `vertex_auth.py`) — OpenRouter itself was never made
+reachable, this just routed around it. The `.env` OpenRouter key
+mentioned in an earlier version of this file was never used for the
+real sweep.
 
 ## Not started
-
-- [ ] **The actual Stage 3 evaluation sweep** — the real cost center. Run `scripts/estimate_stage3_cost.py` first, get explicit scope sign-off (which domains, how many trials), THEN:
-  ```bash
-  .venv/Scripts/python -m aif_orchestrator.tau2_integration.run_stage3_smoke   # confirm the router fix didn't break anything
-  .venv/Scripts/python -m aif_orchestrator.tau2_integration.run_stage3_eval --domain retail --num-trials 1   # one domain first
-  ```
-  `run_stage3_eval.py` saves incrementally (`results/stage3_tau2/summary.json`, gitignored except that summary file) and supports `auto_resume` — a re-run picks up an existing save rather than re-paying for completed simulations.
-- [ ] Once a small real pilot exists, correct `scripts/estimate_stage3_cost.py`'s placeholder assumptions (`--avg-turns`, `--escalation-rate`, `--policy-tokens`) from real observed numbers, and re-estimate before committing to the full sweep.
-- [ ] **Check the epistemic term on the pilot's logs, not just the full sweep.** Running the new interpretability analysis over the repo's existing mock-agent log shows **0/8 EFE decisions driven by the epistemic term** (epistemic share ~0.065). Tiny, non-real-task sample — the mock agent's scripted observations are unusually unambiguous, the regime where information gain has least to offer — so it proves nothing yet. But it makes `ROADMAP.md`'s Milestone 3 gate live rather than hypothetical, and it's far cheaper to learn at pilot scale than after a full sweep. Command: `python -m aif_orchestrator.analysis.stage3_report` for the sweep table; for the epistemic question, load the decision log and call `analyze_decision_log` (see `analysis/interpretability.py`).
+- [ ] **Check the epistemic term against the real Stage 3 sweep data, not just the mock-agent log.** Running the interpretability analysis over the repo's existing mock-agent log showed **0/8 EFE decisions driven by the epistemic term** (epistemic share ~0.065) — but that was a tiny, non-real-task sample (the mock agent's scripted observations are unusually unambiguous, the regime where information gain has least to offer), so it proved nothing yet. Now that the real sweep exists (`results/stage3_tau2/summary.json`, all 3 domains), this is the actual test of `ROADMAP.md`'s Milestone 3 gate. Command: `python -m aif_orchestrator.analysis.stage3_report` for the sweep table; for the epistemic question, load the decision log and call `analyze_decision_log` (see `analysis/interpretability.py`).
 - [ ] Replace the plain JSONL decision log with real OTel GenAI semantic-convention spans (`gen_ai.agent`/`invoke_agent`) — still experimental conventions (`RESEARCH_PLAN.md` §3.2); needs an actual OTel collector/backend, an infra decision, not just code.
 - [ ] HiL-Bench (`arXiv:2604.09408`) — not yet checked for a public code/data release.
 - [ ] Stage 4: GAIA validation subset (optional, only if Stage 3 finishes early).

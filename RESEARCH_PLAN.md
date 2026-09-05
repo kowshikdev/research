@@ -1,33 +1,46 @@
 # Active Inference & Predictive-Coding Control for Grounded LLM Multi-Agent Orchestration
 
-Research/thesis plan. Status: **Stage 1 and Stage 2 complete.** Stage
-0.5 kill-test done (positive result, §4a). Stage 1's EFE control node,
-LangGraph wiring (incl. the `escalate_to_human` → `interrupt()` pause),
-and the real tool-calling LLM agent step (Stage 1c,
-`src/aif_orchestrator/llm_agent.py`) are built and verified end-to-end.
-Stage 2's four baselines (heuristic/learned_router/VOI/ReAct,
-`src/aif_orchestrator/baselines/`) are ported to the real decision-POMDP
-and pluggable into the same LangGraph scaffold, evaluated both against a
-mock stand-in (plumbing check) and against a model-matched simulator
-(`model_env.py`, the genuine repeat of Stage 0.5's methodology at real
-scale) — see [`docs/stage2-baselines-results.md`](docs/stage2-baselines-results.md)
+Research/thesis plan. Status: **Stage 1, Stage 2, and Stage 3's primary
+sweep are complete.** Stage 0.5 kill-test done (positive result, §4a).
+Stage 1's EFE control node, LangGraph wiring (incl. the
+`escalate_to_human` → `interrupt()` pause), and the real tool-calling LLM
+agent step (Stage 1c, `src/aif_orchestrator/llm_agent.py`) are built and
+verified end-to-end. Stage 2's four baselines
+(heuristic/learned_router/VOI/ReAct, `src/aif_orchestrator/baselines/`)
+are ported to the real decision-POMDP and pluggable into the same
+LangGraph scaffold, evaluated both against a mock stand-in (plumbing
+check) and against a model-matched simulator (`model_env.py`, the
+genuine repeat of Stage 0.5's methodology at real scale) — see
+[`docs/stage2-baselines-results.md`](docs/stage2-baselines-results.md)
 Part 2 for the real result: **EFE and VOI diverge here, unlike at
 Stage 0.5's toy scale** — EFE wins on escalation recall, VOI on
 precision and reward. `policy_gate` is now a real OPA evaluation
 (`policies/policy_gate.rego`, `src/aif_orchestrator/opa_policy.py`), not
-the placeholder `allow` earlier stages used. **Stage 3's wiring is fully
-done, including tau2 agent wrappers for all 5 controllers** (not just
-EFE — `src/aif_orchestrator/tau2_integration/baseline_agents.py`),
-tau2-bench cloned and pinned, and smoke-tested against the real
-benchmark's orchestrator (§ Stage 3 below); a real gap in how the Stage 3
-router baseline gets trained was found and fixed, and a cost/budget
-estimator now exists (`scripts/estimate_stage3_cost.py`, ~$5 estimated
-for the full default sweep) — but the actual evaluation sweep itself (the
-real cost center) has not started; that's an open scope/budget decision,
-not a coding task. A hard environment constraint was also found: the
-current session's sandbox cannot reach any LLM API provider over the
-network at all (not a credentials issue), so all LLM-dependent
-verification has to happen locally. Full architecture and design
+the placeholder `allow` earlier stages used.
+
+**Stage 3**: all 5 controllers evaluated against real tau2-bench across
+all three domains (retail/airline/telecom, 15 domain/agent combinations,
+`results/stage3_tau2/summary.json`), via Vertex AI (gemini-2.5-flash,
+`src/aif_orchestrator/tau2_integration/vertex_auth.py`) from a
+headless cloud session using GCP service-account credentials. A real
+escalation-rate contamination bug was found and fixed along the way
+(docs/known-issues-and-gotchas.md #13): the underlying LLM could call
+`transfer_to_human_agents` on any turn regardless of the control node's
+decision, both because the tool was included in the schema on
+non-escalate turns and because gemini-2.5-flash (via Vertex's generic
+OpenAI-compatible passthrough) didn't strictly confine its output to
+the declared schema even once excluded — closing it needed both a
+schema fix and a post-generation filter (`_strip_disallowed_transfer`
+in `efe_agent.py`). Verified via `react_agent` (whose control node can
+never select `escalate_to_human` by construction) showing 0 transfer
+calls across all three domains post-fix, vs. 24/50 before it on
+airline. All three domains were re-run (or, for telecom, run for the
+first time) under the fixed code. One anomaly remains flagged but
+unexplained: `retail/voi_agent`'s escalation rate swung from 19→113
+between the original and re-run sweeps — investigated and ruled out as
+caused by the fix itself, documented as an open unknown rather than
+silently accepted. Analysis/interpretability work against this real
+sweep data (Stage 5) is the open next step.
 documentation, with diagrams, now lives in `docs/` (start at
 [`docs/architecture-overview.md`](docs/architecture-overview.md)). See
 [`context/HANDOFF.md`](context/HANDOFF.md) and
@@ -285,7 +298,7 @@ not about who has more information.
   ("LLM-estimated P(success|context)") — see `context/TODOS.md` for why
   and what would still motivate building that version at Stage 3.
 
-### Stage 3 — Primary evaluation (weeks 8–12) — wiring done, sweep not started
+### Stage 3 — Primary evaluation (weeks 8–12) — sweep complete (all 3 domains)
 
 - [x] tau2-bench cloned (`external/tau2-bench`, gitignored, pinned commit
   `a2c0247` / `tau2==1.0.1` — upstream repo is now branded τ³-bench,

@@ -1,15 +1,52 @@
 # Handoff — read this first
 
-**Latest update (this pass):** corrected a stale claim in the previous
-version of this file (item 10 below said the four Stage 2 baselines
-"would need their own tau2 agent wrappers, not yet built" — they were
-already built by the time that was written; corrected here), found and
-fixed a real gap in how the Stage 3 router baseline gets trained (item
-11), built the Stage 3 cost/budget estimator TODOS.md was waiting on
-(item 12), discovered a hard environment constraint this cloud session
-can't work around (item 13), and wrote 8 new architecture/design docs
-under `docs/` (item 14). Read items 10-14 for what's new; the rest of
-this file is prior history, kept because it's still accurate.
+**Latest update (this pass): the Stage 3 sweep is done.** Items 10-13
+below describe the state *before* the sweep ran (wiring done, sweep not
+started, this cloud sandbox can't reach any LLM provider) — that
+constraint was resolved via Vertex AI (gemini-2.5-flash, GCP
+service-account credentials work headless; `vertex_auth.py`), not by
+finding a way to reach OpenRouter. All 5 controllers are now evaluated
+against real tau2-bench across all three domains (retail/airline/
+telecom — `results/stage3_tau2/summary.json`, 15 domain/agent
+combinations).
+
+Along the way, a real escalation-rate contamination bug was found and
+fixed: the underlying LLM could call `transfer_to_human_agents` on any
+turn regardless of the control node's decision — first because the tool
+was included in the schema on non-escalate turns, and then (a deeper
+layer, found by re-checking after the first fix) because
+gemini-2.5-flash via Vertex's OpenAI-compatible passthrough didn't
+strictly confine its output to the declared schema even once the tool
+was excluded from it. Closing it needed two independent layers: schema
+exclusion AND a post-generation filter (`_strip_disallowed_transfer` in
+`efe_agent.py`). Verified via `react_agent` (whose control node can
+never select `escalate_to_human` by construction) showing 0 transfer
+calls across all three domains post-fix, vs. 24/50 on airline before it.
+Full writeup: `docs/known-issues-and-gotchas.md` #13. Retail and airline
+were re-run under the fix; telecom was run for the first time already
+under it, so it has no contaminated history.
+
+One anomaly is flagged but not fully explained: `retail/voi_agent`'s
+escalation count swung from 19 (original sweep) to 113 (re-run) — by far
+the largest change of any re-run controller. Investigated and ruled out
+as caused by the fix itself (VOI's own decision logic and the OPA
+policy_gate wiring are both unchanged between the two runs); most likely
+explanation is run-to-run sampling variance in the live, real
+conversations, but that's not confirmed. Documented as an open unknown,
+not silently accepted — see `docs/known-issues-and-gotchas.md`'s Open
+Unknowns section.
+
+Prior "Latest update" (kept below, still accurate as history): corrected
+a stale claim in the previous version of this file (item 10 below said
+the four Stage 2 baselines "would need their own tau2 agent wrappers,
+not yet built" — they were already built by the time that was written;
+corrected here), found and fixed a real gap in how the Stage 3 router
+baseline gets trained (item 11), built the Stage 3 cost/budget estimator
+TODOS.md was waiting on (item 12), discovered a hard environment
+constraint this cloud session can't work around (item 13 — since
+resolved via Vertex, see above), and wrote 8 new architecture/design
+docs under `docs/` (item 14). Read items 10-14 for that history; the
+rest of this file is prior history, kept because it's still accurate.
 
 This file plus `context/TODOS.md` should let a fresh session resume
 without re-deriving anything. Everything referenced below is committed to
