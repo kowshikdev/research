@@ -4,7 +4,7 @@
     "avg_reward": 0.05263157894736842,
     "pass_1": 0.05263157894736842,
     "escalations": 114,
-    "elapsed_sec": 0.8428854942321777
+    "elapsed_sec": 268.5513663291931
   },
   "retail/heuristic_agent": {
     "n_simulations": 114,
