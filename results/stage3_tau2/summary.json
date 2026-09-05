@@ -29,10 +29,10 @@
   },
   "airline/efe_agent": {
     "n_simulations": 50,
-    "avg_reward": 0.46,
-    "pass_1": 0.46,
+    "avg_reward": 0.44,
+    "pass_1": 0.44,
     "escalations": 50,
-    "elapsed_sec": 0.5692424774169922
+    "elapsed_sec": 89.96193838119507
   },
   "airline/heuristic_agent": {
     "n_simulations": 50,
