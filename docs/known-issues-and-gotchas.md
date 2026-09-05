@@ -314,3 +314,27 @@ the output as well as the input if it doesn't hold.
   shared, admittedly-uncalibrated model — not testing against
   ground-truth-calibrated probabilities. Calibration is explicitly Stage
   3+ work, once real trajectories exist to calibrate against.
+- **`retail/voi_agent`'s escalation rate jumped from 19/114 (original
+  sweep) to 113/114 (the re-run under the transfer-tool fix, #13)** --
+  the largest swing of any of the four re-run controllers by far
+  (heuristic dropped 15→3, router moved 27→57). Direct inspection of the
+  saved conversations (`results/stage3_tau2/retail__voi_agent.json`)
+  shows `VOIControlNode` escalating almost immediately, at the very
+  first real decision point, whenever the customer's first response
+  doesn't include their email ("I don't remember which email I used") --
+  a near-universal pattern across the 113 tasks. This is `VOIControlNode`
+  choosing `escalate_to_human` for itself (the dedicated escalate branch
+  in `efe_agent.py`, unchanged by today's fix); it is not the transfer
+  tool leaking through. Checked and ruled out as causes: `voi.py`'s own
+  decision logic (unchanged since Stage 2, `ddd0054`), the OPA
+  `policy_gate` wiring (already real-OPA in both the original and re-run
+  sweep, `8f0ccd7`), and this environment's `opa` CLI absence (fails safe
+  to `"needs_review"` either way, so it's a constant across both runs,
+  not a new variable). What's *not* ruled out: real, run-to-run sampling
+  variance in the user-simulator's willingness to volunteer identifying
+  info on the first turn -- if that shifted between the two sweeps for
+  reasons upstream of this codebase (a Gemini-side behavior change,
+  Vertex routing, etc.), a controller whose decision math weighs
+  "no verifiable evidence yet" heavily would plausibly react exactly
+  like this. Flagged rather than silently accepted or reverted, since
+  the cause isn't confirmed either way yet.
