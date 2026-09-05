@@ -183,8 +183,10 @@ def format_report(results: list[AgentDomainResult]) -> str:
 
     lines += [
         "> Escalation precision/recall (when present) come from the raw-dump "
-        "reader, which has never been validated against a real tau2 dump — "
-        "see `analysis/stage3_report.py`'s module docstring before citing them.",
+        "reader. Validated to parse the real Stage 3 sweep cleanly (0 parse "
+        "warnings); the ground truth they use for \"correct escalation\" is "
+        "still a proxy, not tau2's own notion — see `enrich_from_raw_dump`'s "
+        "docstring before citing them as a precise measurement.",
     ]
     return "\n".join(lines)
 
