@@ -142,6 +142,39 @@ def _ensure_non_empty(message: "AssistantMessage") -> "AssistantMessage":
 
 TRANSFER_TOOL_NAME = "transfer_to_human_agents"
 
+
+def _strip_disallowed_transfer(message: "AssistantMessage") -> "AssistantMessage":
+    """Removes any transfer_to_human_agents call from a non-escalate-branch
+    response, even though that tool was excluded from this call's `tools`
+    schema.
+
+    Confirmed on a real airline task: gemini-2.5-flash, called through
+    Vertex's generic OpenAI-compatible passthrough, emitted a
+    transfer_to_human_agents call for react_agent (ReActControlNode, which
+    can never select escalate_to_human) despite the tool being absent from
+    the `tools` list passed to that exact generate() call -- almost
+    certainly because domain_policy's system-prompt text describes the
+    tool by name and signature, and this endpoint doesn't strictly confine
+    generated function calls to the declared schema the way OpenAI's own
+    API does. tau2's environment executes any tool call by name against
+    the domain's full registered tool set, independent of what was
+    offered in the request that produced it, so omitting the tool from
+    the schema is necessary but not sufficient -- the output has to be
+    filtered too.
+    """
+    if not message.is_tool_call():
+        return message
+    kept = [tc for tc in message.tool_calls if tc.name != TRANSFER_TOOL_NAME]
+    if len(kept) == len(message.tool_calls):
+        return message
+    if kept:
+        return message.model_copy(update={"tool_calls": kept})
+    if message.content:
+        return message.model_copy(update={"tool_calls": None})
+    return AssistantMessage.text(
+        content="Let me look into that further before we continue."
+    )
+
 # Mirrors llm_agent.POLICY_STEER -- the chosen policy has to actually
 # change what the agent does next turn, or a non-terminal policy just
 # re-prompts against unchanged context and the model repeats itself.
@@ -306,6 +339,7 @@ class ControlNodeAgent(
                 call_name="control_node_agent_first_turn", max_tokens=1000,
                 **self.llm_args,
             )
+            assistant_message = _strip_disallowed_transfer(assistant_message)
             assistant_message = _ensure_non_empty(assistant_message)
             state.messages.append(assistant_message)
             return assistant_message, state
@@ -383,6 +417,7 @@ class ControlNodeAgent(
                 call_name="control_node_agent_response", max_tokens=1000,
                 **self.llm_args,
             )
+            assistant_message = _strip_disallowed_transfer(assistant_message)
             assistant_message = _ensure_non_empty(assistant_message)
 
         state.messages.append(assistant_message)

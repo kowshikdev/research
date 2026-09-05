@@ -38,8 +38,13 @@ def test_call_shapes_match_the_max_tokens_the_agent_actually_requests(estimator)
 
     assert f"max_tokens={confidence['max_tokens']}" in agent_src
     assert f"max_tokens={response['max_tokens']}" in agent_src
-    assert f'"max_tokens": {confidence["reasoning_max_tokens"]}' in agent_src
-    assert f'"max_tokens": {response["reasoning_max_tokens"]}' in agent_src
+    # gemini-2.5-flash (current Stage 3 model, vertex_auth.py) has no
+    # separate reasoning-token budget the way the earlier Groq/OpenRouter
+    # models did -- reasoning_max_tokens is pinned at 0, not read from
+    # source, since there's no extra_body={"reasoning": {...}} call left
+    # to drift out of sync with.
+    assert confidence["reasoning_max_tokens"] == 0
+    assert response["reasoning_max_tokens"] == 0
 
 
 def test_confidence_call_does_not_carry_the_domain_policy(estimator):

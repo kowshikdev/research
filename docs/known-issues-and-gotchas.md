@@ -266,6 +266,40 @@ controller whose action space provably excludes the observed behavior is
 a stronger signal than it looks -- it means the measured behavior isn't
 coming from the mechanism under test at all.
 
+**Update -- schema exclusion alone was not sufficient.** A targeted
+re-check (running `react_agent` against real airline tasks right after
+deploying the above fix) reproduced the same failure mode on task 0:
+`transfer_to_human_agents` was called with empty arguments even though
+it had been excluded from that exact `generate()` call's `tools`
+parameter. gemini-2.5-flash, called through Vertex's generic
+OpenAI-compatible passthrough (`vertex_auth.py`), does not appear to
+strictly confine its function calls to the declared schema the way
+OpenAI's own API does -- `domain_policy`'s system-prompt text describes
+`transfer_to_human_agents` by name and signature for every core tau2
+domain, and the model can apparently still emit a matching call from
+that description alone. Compounding it: tau2's environment executes any
+tool call by name against the domain's *full* registered tool set,
+independent of what was actually offered in the request that produced
+it -- so a schema-excluded-but-still-emitted call still gets executed
+and scored as a real transfer.
+
+The robust fix needed a second, independent layer:
+`_strip_disallowed_transfer()` in `efe_agent.py` filters
+`transfer_to_human_agents` out of the assistant message itself after
+`generate()` returns, on both non-escalate branches, regardless of what
+was in the request schema. If that leaves the message with no content
+and no other tool calls, it substitutes a safe placeholder rather than
+letting an empty message fail tau2's validation. A follow-up run of the
+same real-task check (react_agent, 6 airline tasks) confirmed 0 transfer
+calls under this fix.
+
+**Lesson, restated**: for a model reachable through a non-native
+API-compatibility layer, don't assume the provider enforces "the model
+can only call what's in the schema" -- verify it against a real
+adversarial case (a controller whose policy space *cannot* produce the
+behavior, run against the model that actually misbehaved), and filter
+the output as well as the input if it doesn't hold.
+
 ## Open unknowns (not bugs, but flagged so they don't get mistaken for measurements)
 
 - **`scripts/estimate_stage3_cost.py`'s assumptions** — average turns

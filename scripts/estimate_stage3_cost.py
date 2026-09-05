@@ -56,20 +56,23 @@ PRICE_PER_MTOK_INPUT = 0.098
 PRICE_PER_MTOK_OUTPUT = 0.196
 
 # Read directly from source, not estimated:
-#   efe_agent.py _derive_confidence(): max_tokens=150, reasoning.max_tokens=100
-#   efe_agent.py generate_next_message() agent-response generate(): max_tokens=600, reasoning.max_tokens=300
-#   run_stage3_eval.py llm_args_user: max_tokens=1000, reasoning.max_tokens=300
+#   efe_agent.py _derive_confidence(): max_tokens=250
+#   efe_agent.py generate_next_message() agent-response generate(): max_tokens=1000
+#   run_stage3_eval.py llm_args_user: max_tokens=1000
 # Actual usage is typically well below the ceiling -- UTILIZATION below
-# estimates the fraction of max_tokens actually spent on output;
-# reasoning tokens in particular often run near their cap for this model
-# (see context/HANDOFF.md's gotcha on z-ai/glm-5.3-flash-style mandatory
-# reasoning -- re-check whether this still applies if LLM_MODEL changes).
+# estimates the fraction of max_tokens actually spent on output.
+# reasoning_max_tokens is 0 across the board: that field only mattered for
+# the earlier Groq/OpenRouter models, which took a separate
+# extra_body={"reasoning": {"max_tokens": ...}} budget -- gemini-2.5-flash
+# via Vertex's OpenAI-compatible passthrough (the current Stage 3 model,
+# vertex_auth.py) has no such parameter, so there's no separate budget to
+# add.
 UTILIZATION = 0.5
 CALL_SHAPES = {
-    "confidence_verifier": {"max_tokens": 150, "reasoning_max_tokens": 100, "includes_policy": False},
-    "agent_response": {"max_tokens": 600, "reasoning_max_tokens": 300, "includes_policy": True},
-    "post_escalation_response": {"max_tokens": 600, "reasoning_max_tokens": 300, "includes_policy": True},
-    "user_simulator": {"max_tokens": 1000, "reasoning_max_tokens": 300, "includes_policy": True},
+    "confidence_verifier": {"max_tokens": 250, "reasoning_max_tokens": 0, "includes_policy": False},
+    "agent_response": {"max_tokens": 1000, "reasoning_max_tokens": 0, "includes_policy": True},
+    "post_escalation_response": {"max_tokens": 1000, "reasoning_max_tokens": 0, "includes_policy": True},
+    "user_simulator": {"max_tokens": 1000, "reasoning_max_tokens": 0, "includes_policy": True},
 }
 
 # Placeholder -- override with --policy-tokens once measured against the
