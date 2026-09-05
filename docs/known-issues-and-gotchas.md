@@ -300,6 +300,25 @@ adversarial case (a controller whose policy space *cannot* produce the
 behavior, run against the model that actually misbehaved), and filter
 the output as well as the input if it doesn't hold.
 
+### 14. `stage3_report.py`'s raw-dump reader assumed a flat file; tau2 writes a directory
+
+`enrich_from_raw_dump` (used by `--raw` for escalation precision/recall)
+was written against an *inferred* schema before any real sweep existed,
+and its own docstring said so. Running it for the first time against
+the real Stage 3 sweep raised `IsADirectoryError` immediately: tau2's
+`TextRunConfig.save_to=".../<domain>__<agent>.json"` actually creates a
+*directory* at that path containing `results.json`, not a flat file at
+the path itself. Once pointed at the right file, every other assumption
+in the reader held -- `reward_info.reward` and
+`messages[].tool_calls[].name` matched exactly, 0 parse warnings across
+all 15 domain/agent combinations.
+
+**Lesson**: "written defensively, never run against real data" is
+exactly the state where a structural assumption (file vs. directory)
+is the likeliest failure, not the field-level schema the code was
+actually worried about — the first real run is worth doing before
+trusting the rest of the reader's caveats.
+
 ## Open unknowns (not bugs, but flagged so they don't get mistaken for measurements)
 
 - **`scripts/estimate_stage3_cost.py`'s assumptions** — average turns

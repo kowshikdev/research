@@ -10,15 +10,18 @@ trusted:
     elapsed_sec}}. This is the primary path and is fully supported.
 
   * `results/stage3_tau2/<domain>__<agent>.json` -- tau2's own serialized
-    `SimulationResults`. The attribute paths used here
-    (`simulations[].reward_info.reward`, `simulations[].messages[].tool_calls[].name`)
-    are the ones run_stage3_eval.py already reads successfully from the
-    live objects, so the serialized key names are expected to match --
-    but **this path has never run against a real dump**, because no
-    sweep has been executed yet (context/TODOS.md). It is written
-    defensively and reports what it could not parse rather than
-    guessing. Verify it against the first real sweep before trusting
-    per-task numbers from it.
+    `SimulationResults`. **Validated against the real Stage 3 sweep**
+    (all 15 domain/agent combinations, 0 parse warnings) -- the one
+    thing that needed fixing on that first real run was the path itself:
+    tau2's `TextRunConfig.save_to` actually writes a *directory* at this
+    path containing `results.json`, not a flat file, which
+    `enrich_from_raw_dump` now checks for. The attribute paths
+    (`simulations[].reward_info.reward`,
+    `simulations[].messages[].tool_calls[].name`) matched what
+    run_stage3_eval.py already reads from the live objects, as expected.
+    Escalation precision/recall are still a proxy ground truth (see
+    `enrich_from_raw_dump`'s docstring) -- validated to *parse* cleanly,
+    not validated as the *right* definition of a correct escalation.
 
 Run: .venv/bin/python -m aif_orchestrator.analysis.stage3_report
 """
@@ -92,6 +95,12 @@ def enrich_from_raw_dump(result: AgentDomainResult, results_dir=None) -> AgentDo
     """
     results_dir = Path(results_dir) if results_dir else RESULTS_DIR
     dump = results_dir / f"{result.domain}__{result.agent}.json"
+    # tau2's TextRunConfig.save_to writes a *directory* at this path
+    # (confirmed against a real sweep, not the flat file this originally
+    # assumed) containing results.json -- fall back to the flat-file
+    # layout too in case a future tau2 version changes this back.
+    if dump.is_dir():
+        dump = dump / "results.json"
     if not dump.exists():
         result.parse_warnings.append(f"no raw dump at {dump}")
         return result

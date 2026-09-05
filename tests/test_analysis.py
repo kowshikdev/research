@@ -294,6 +294,30 @@ def test_stage3_raw_enrichment_computes_precision_and_recall(tmp_path):
     assert not enriched.parse_warnings
 
 
+def test_stage3_raw_enrichment_handles_tau2s_directory_layout(tmp_path):
+    """Regression: the first real Stage 3 sweep showed tau2's
+    `TextRunConfig.save_to` writes a *directory* named `<domain>__<agent>.json`
+    containing `results.json`, not a flat file at that exact path -- the
+    original reader (matching the flat-file assumption in its own
+    docstring) raised IsADirectoryError the first time it ran against a
+    real dump."""
+    dump_dir = tmp_path / "retail__efe_agent.json"
+    dump_dir.mkdir()
+    (dump_dir / "results.json").write_text(json.dumps({
+        "simulations": [
+            {"reward_info": {"reward": 1.0},
+             "messages": [{"tool_calls": [{"name": "transfer_to_human_agents"}]}]},
+        ]
+    }))
+    result = stage3_report.AgentDomainResult(
+        domain="retail", agent="efe_agent", n_simulations=1,
+        avg_reward=1.0, pass_1=1.0, escalations=1,
+    )
+    enriched = stage3_report.enrich_from_raw_dump(result, results_dir=tmp_path)
+    assert enriched.escalation_precision == pytest.approx(1.0)
+    assert not enriched.parse_warnings
+
+
 def test_stage3_raw_enrichment_warns_on_unexpected_schema(tmp_path):
     (tmp_path / "retail__efe_agent.json").write_text(json.dumps({"unexpected": []}))
     result = stage3_report.AgentDomainResult(
