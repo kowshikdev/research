@@ -32,7 +32,7 @@
     "avg_reward": 0.44,
     "pass_1": 0.44,
     "escalations": 50,
-    "elapsed_sec": 0.5665948390960693
+    "elapsed_sec": 88.16382932662964
   },
   "airline/heuristic_agent": {
     "n_simulations": 50,
