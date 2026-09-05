@@ -188,6 +188,23 @@ class ControlNodeAgent(
     def __init__(self, tools: list[Tool], domain_policy: str, llm: str, llm_args: Optional[dict] = None):
         super().__init__(tools=tools, domain_policy=domain_policy, llm=llm, llm_args=llm_args)
         self._transfer_tool = next((t for t in tools if t.name == TRANSFER_TOOL_NAME), None)
+        # Real bug found on the airline sweep (docs/known-issues-and-gotchas.md):
+        # every non-escalate generate() call below used to pass the FULL
+        # tools list (self.tools), which includes transfer_to_human_agents
+        # -- so the underlying LLM could call it on its own initiative on
+        # ANY turn, regardless of what the control node decided that turn.
+        # Confirmed empirically: ReActControlNode can never choose
+        # "escalate_to_human" by construction, yet airline/react_agent
+        # showed 24/50 escalations -- 100% of those were the model
+        # escalating unprompted, not our control mechanism. This silently
+        # invalidated escalation-rate as a cross-controller comparison for
+        # every controller except whichever turn a controller's own
+        # decision.policy == "escalate_to_human" fired -- the ONLY point
+        # where the tool should ever be reachable is the dedicated
+        # escalate branch below, which builds the transfer call directly
+        # and never calls generate() with tools at all. Excluding the
+        # transfer tool from every other generate() call closes that gap.
+        self._tools_sans_transfer = [t for t in tools if t.name != TRANSFER_TOOL_NAME]
 
     @property
     def system_prompt(self) -> str:
@@ -285,7 +302,7 @@ class ControlNodeAgent(
         if not state.messages and isinstance(message, UserMessage):
             state.messages.append(message)
             assistant_message = generate(
-                model=self.llm, tools=self.tools, messages=state.system_messages + state.messages,
+                model=self.llm, tools=self._tools_sans_transfer, messages=state.system_messages + state.messages,
                 call_name="control_node_agent_first_turn", max_tokens=1000,
                 **self.llm_args,
             )
@@ -362,7 +379,7 @@ class ControlNodeAgent(
             if steer:
                 messages = messages + [SystemMessage(role="system", content=steer)]
             assistant_message = generate(
-                model=self.llm, tools=self.tools, messages=messages,
+                model=self.llm, tools=self._tools_sans_transfer, messages=messages,
                 call_name="control_node_agent_response", max_tokens=1000,
                 **self.llm_args,
             )

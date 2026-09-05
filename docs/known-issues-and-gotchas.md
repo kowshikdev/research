@@ -223,6 +223,49 @@ anywhere; anything with a trained artifact reproduces within an
 environment, and the distinction belongs next to the numbers rather than
 in a reader's assumptions.
 
+### 13. Escalation-rate contamination: the transfer tool was reachable on every turn, not just the control node's escalate branch
+
+The Stage 3 airline sweep produced an impossible data point: `react_agent`
+(`ReActControlNode`, which can never select `escalate_to_human` -- it isn't
+one of that controller's reachable policies by construction) showed
+24/50 escalations. Every controller's escalation count was, in fact,
+counting something other than the control node's decision.
+
+Root cause: `efe_agent.py`'s non-escalate `generate()` calls (the turn-0
+branch and the main per-turn branch) passed the agent's *full* tool list,
+`self.tools`, which includes `transfer_to_human_agents`. The underlying
+LLM is free to call any tool in the list it's given -- so on any turn,
+regardless of what the control node decided, the model could invoke the
+transfer tool on its own initiative. The dedicated escalate branch (which
+fires when `decision.policy == "escalate_to_human"`) builds the transfer
+call directly without going through `generate()` at all, so it was never
+the only path to an escalation -- it was just the only *intended* one.
+
+This silently invalidated escalation-rate as a cross-controller metric
+for every controller except insofar as its own control-node decisions
+happened to coincide with turns where the model would have escalated
+anyway. Reward numbers are unaffected (tau2 scores those independently
+of how the transfer happened).
+
+Fix: build a `self._tools_sans_transfer` list once in `__init__` (all
+tools except `transfer_to_human_agents`) and pass that instead of
+`self.tools` on both non-escalate `generate()` call sites. The transfer
+tool is now reachable only from the one branch that's supposed to reach
+it.
+
+There is no way to recover clean escalation counts from the contaminated
+runs after the fact -- tau2's saved simulation results don't retain a
+per-turn record of which tools were offered. The retail and airline
+domains were re-run under the corrected code; only the re-run counts are
+valid for escalation-rate comparisons.
+
+**Lesson**: when a control layer's decision is supposed to gate an LLM's
+tool access, verify the gate at the tool-list level, not just at the
+branch that's meant to be the only caller. An anomalous data point from a
+controller whose action space provably excludes the observed behavior is
+a stronger signal than it looks -- it means the measured behavior isn't
+coming from the mechanism under test at all.
+
 ## Open unknowns (not bugs, but flagged so they don't get mistaken for measurements)
 
 - **`scripts/estimate_stage3_cost.py`'s assumptions** — average turns
