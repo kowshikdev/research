@@ -72,36 +72,57 @@ so the honest write-up is a trade-off characterization (EFE: escalation
 recall; VOI: precision and reward), not a win claim. That result is
 publishable given nobody has run this comparison before.
 
-## Milestone 3 — Stage 5 interpretability on real data
+## Milestone 3 — Stage 5 interpretability on real data — GATE FIRED
 
 **Goal:** the project's distinct methodological contribution.
 
-The machinery is already built and tested (`analysis/interpretability.py`);
-it has only ever run on synthetic logs. On real sweep logs it answers the
-question that matters: **did the epistemic term ever actually change a
-decision?**
+The machinery (`analysis/interpretability.py`) has now run against real
+sweep data, not just synthetic/mock logs. Getting there needed one more
+fix first: nothing on the tau2 sweep path had ever *written* a decision
+log (`state.decision_trace` was in-memory only, and tau2 doesn't persist
+agent state in its own saved results) — added as opt-in logging
+(`EFE_DECISION_LOG_PATH`, `efe_agent.py`) and used it for a dedicated
+EFE-only re-run across all three domains (retail/airline/telecom, 278
+decisions total; other controllers zero this field by construction and
+weren't re-run).
 
-**Gate — the uncomfortable one:** if `decisions_driven_by_epistemic` is
-~0 on real data, then EFE behaved as a goal-seeking controller with extra
-machinery, and the active-inference framing is decorative for this task
-class. The report already flags this case explicitly rather than burying
-it. That finding would need to lead the write-up, not be a footnote — and
-it would sharpen rather than sink the thesis, since "the epistemic term
-doesn't earn its keep in tool-agent orchestration" is itself a result
-nobody has published.
+**The gate fired, and it's the uncomfortable direction:**
+`decisions_driven_by_epistemic` is **0/278** on the real sweep —
+identical in kind to the earlier 8-decision mock-agent pilot, now
+confirmed at full scale on genuinely varied real tasks across three
+domains. EFE chose `escalate_to_human` on **every single one** of the
+278 decisions (one decision per task, at the very first real turn —
+`mean_turns_per_task` and `escalation_rate` both 1.0). The epistemic
+term is not zero (mean epistemic value of the chosen policy: 0.436,
+epistemic share of the decision signal: 8.4%) — it's present and
+sometimes substantial — but never the deciding factor: the pragmatic
+term (mean -4.75 for the chosen policy — strongly negative, but still
+the least-bad option among policies whose pragmatic value is worse)
+would have picked `escalate_to_human` on its own every time, with or
+without the epistemic term attached.
 
-**Early signal, worth knowing before the sweep:** run against the
-repo's existing `results/stage2_decision_log.jsonl` (mock agent, 8 EFE
-decisions), the analysis reports **0/8 decisions driven by the epistemic
-term** — epistemic share of the decision signal ~0.065, with the
-pragmatic term dominating. That is a *tiny, non-real-task sample* and
-proves nothing on its own: the mock agent's scripted observations are
-unusually unambiguous, which is exactly the regime where information
-gain has least to offer. But it means this gate is live rather than
-hypothetical, and it is worth checking on the first real pilot's logs
-(Milestone 1) rather than waiting for the full sweep — if the epistemic
-term is still inert on real, genuinely ambiguous tasks, that reshapes
-the thesis and it is much cheaper to learn at pilot scale.
+**What this means for the thesis, stated plainly rather than buried:**
+on this task class, with this hand-specified (uncalibrated)
+generative model, EFE is functionally a goal-seeking controller with
+extra machinery — the active-inference framing is not earning its keep
+here. This is compounded by (and likely partly explained by) the
+near-ceiling escalation rate itself: EFE escalates 100% of the time in
+all three domains (`results/stage3_tau2/summary.json`), badly hurting
+its reward relative to heuristic/router (e.g. retail: EFE 0.053 vs.
+heuristic 0.228) — a controller that always escalates has no live
+decision to be information-driven *about*. Two live hypotheses, not yet
+distinguished: (1) the hand-specified `OBS_DISTS`/`C_WEIGHTS` are
+mis-calibrated in a way that makes `needs_human` the dominant posterior
+almost immediately (Milestone 4 below would test this), or (2) this
+task class (tool-calling customer-service conversations) is
+structurally low-ambiguity in the same way the mock agent's scripted
+observations were — real conversations resolve the "what's actually
+wrong" question fast, leaving little room for the epistemic term to
+outweigh pragmatic considerations before a decision is due. Distinguishing
+these is exactly Milestone 4's job. Either way: "the epistemic term
+doesn't earn its keep in tool-agent orchestration, at least not without
+calibration" is a real, citable result — it just needs to lead the
+write-up, not be a footnote.
 
 ## Milestone 4 — Calibration (the biggest open scientific gap)
 

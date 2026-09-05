@@ -12,6 +12,12 @@ uv.lock
 # can get large across a real sweep) -- keep only the summary.
 results/stage3_tau2/*
 !results/stage3_tau2/summary.json
+# The Stage 5 interpretability evidence: small (278 records), citable,
+# and expensive to regenerate (a real paid LLM sweep, not just code) --
+# worth keeping alongside summary.json rather than treated as a
+# regeneratable dump like the raw per-domain simulation transcripts.
+!results/stage3_tau2/efe_decision_log.jsonl
+!results/stage3_tau2/interpretability_report.md
 # Per-run pipeline artifact (timings churn every run; the citable
 # results are the stage-specific JSON files alongside it).
 results/pipeline_run.json
