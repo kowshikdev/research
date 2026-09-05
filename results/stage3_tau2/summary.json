@@ -89,5 +89,12 @@
     "pass_1": 0.017543859649122806,
     "escalations": 10,
     "elapsed_sec": 1235.7372560501099
+  },
+  "telecom/voi_agent": {
+    "n_simulations": 114,
+    "avg_reward": 0.16666666666666666,
+    "pass_1": 0.16666666666666666,
+    "escalations": 114,
+    "elapsed_sec": 403.6373164653778
   }
 }
