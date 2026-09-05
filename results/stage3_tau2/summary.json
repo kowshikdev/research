@@ -36,10 +36,10 @@
   },
   "airline/heuristic_agent": {
     "n_simulations": 50,
-    "avg_reward": 0.48,
-    "pass_1": 0.48,
-    "escalations": 19,
-    "elapsed_sec": 92.97942972183228
+    "avg_reward": 0.42,
+    "pass_1": 0.42,
+    "escalations": 3,
+    "elapsed_sec": 554.018762588501
   },
   "airline/router_agent": {
     "n_simulations": 50,
