@@ -32,6 +32,9 @@ all of them (baseline_agents.py registers factories for the other
 four); only EFEAgent's factory/name are kept here for backward
 compatibility with the Stage 3 smoke test.
 """
+import json
+import os
+import threading
 import uuid
 from typing import Generic, Optional, TypeVar
 
@@ -200,9 +203,48 @@ class ControlNodeAgentState(BaseModel):
     last_policy: Optional[str] = None
     decision_trace: list[dict] = []
     escalated: bool = False
+    # Synthetic, not tau2's own task id -- the agent has no access to that
+    # (tau2's orchestrator/runner knows the task, not the agent instance).
+    # Only needs to be unique and stable per conversation for
+    # analysis.decision_log's group_by_task to work correctly.
+    synthetic_task_id: str = ""
 
 
 ControlNodeAgentStateType = TypeVar("ControlNodeAgentStateType", bound="ControlNodeAgentState")
+
+_task_counter_lock = threading.Lock()
+_task_counter = 0
+
+
+def _next_synthetic_task_id() -> str:
+    global _task_counter
+    with _task_counter_lock:
+        _task_counter += 1
+        return f"synthetic-{_task_counter}"
+
+
+def _log_decision_if_enabled(controller_name: str, task_id: str, turn: int, record: dict) -> None:
+    """Appends a graph.py-schema-compatible JSONL record for Stage 5's
+    interpretability analysis (analysis/decision_log.py,
+    analysis/interpretability.py) -- these tools already exist and work
+    against graph.py's mock/LangGraph decision log, but nothing on the
+    real tau2 sweep path ever wrote one (state.decision_trace is
+    in-memory only, and tau2 doesn't persist agent state in its own
+    saved results), so the interpretability question could never be
+    asked against real task data. Off by default (only EFE has a
+    non-trivial epistemic term to analyze, and every other controller
+    logging on every turn of a real sweep would be needless volume) --
+    set EFE_DECISION_LOG_PATH to enable for a targeted re-run.
+    """
+    path = os.environ.get("EFE_DECISION_LOG_PATH")
+    if not path:
+        return
+    payload = {
+        "task_id": task_id, "turn": turn, "controller": controller_name,
+        **record,
+    }
+    with open(path, "a") as f:
+        f.write(json.dumps(payload) + "\n")
 
 
 def _tool_call_key(name: str, arguments: dict) -> tuple:
@@ -248,6 +290,7 @@ class ControlNodeAgent(
             system_messages=[SystemMessage(role="system", content=self.system_prompt)],
             messages=message_history or [],
             belief=list(D_PRIOR),
+            synthetic_task_id=_next_synthetic_task_id(),
         )
 
     def _derive_observation(self, incoming: ValidAgentInputMessage, state: ControlNodeAgentStateType) -> Observation:
@@ -396,6 +439,18 @@ class ControlNodeAgent(
             "observation": observation.__dict__,
             "belief": decision.belief,
         })
+        _log_decision_if_enabled(
+            controller_name=getattr(self.control_node_cls, "name", self.control_node_cls.__name__),
+            task_id=state.synthetic_task_id, turn=len(state.decision_trace) - 1,
+            record={
+                "observation": observation.__dict__,
+                "chosen_policy": decision.policy,
+                "belief": decision.belief,
+                "action_marginals": decision.action_marginals,
+                "epistemic_value": decision.epistemic_value,
+                "pragmatic_value": decision.pragmatic_value,
+            },
+        )
 
         if decision.policy == "escalate_to_human" and self._transfer_tool is not None:
             summary = self._build_transfer_summary(state)
