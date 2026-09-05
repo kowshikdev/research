@@ -4,7 +4,7 @@
     "avg_reward": 0.05263157894736842,
     "pass_1": 0.05263157894736842,
     "escalations": 114,
-    "elapsed_sec": 148.8693208694458
+    "elapsed_sec": 0.8428854942321777
   },
   "retail/heuristic_agent": {
     "n_simulations": 114,
@@ -32,7 +32,7 @@
     "avg_reward": 0.44,
     "pass_1": 0.44,
     "escalations": 50,
-    "elapsed_sec": 89.96193838119507
+    "elapsed_sec": 0.5665948390960693
   },
   "airline/heuristic_agent": {
     "n_simulations": 50,
@@ -74,7 +74,7 @@
     "avg_reward": 0.16666666666666666,
     "pass_1": 0.16666666666666666,
     "escalations": 114,
-    "elapsed_sec": 234.5063440799713
+    "elapsed_sec": 0.8137116432189941
   },
   "telecom/heuristic_agent": {
     "n_simulations": 110,
