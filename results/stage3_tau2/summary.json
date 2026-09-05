@@ -75,5 +75,12 @@
     "pass_1": 0.16666666666666666,
     "escalations": 114,
     "elapsed_sec": 234.5063440799713
+  },
+  "telecom/heuristic_agent": {
+    "n_simulations": 110,
+    "avg_reward": 0.10909090909090909,
+    "pass_1": 0.10909090909090909,
+    "escalations": 41,
+    "elapsed_sec": 1208.5029497146606
   }
 }
