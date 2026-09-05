@@ -96,5 +96,12 @@
     "pass_1": 0.16666666666666666,
     "escalations": 114,
     "elapsed_sec": 403.6373164653778
+  },
+  "telecom/react_agent": {
+    "n_simulations": 113,
+    "avg_reward": 0.017699115044247787,
+    "pass_1": 0.017699115044247787,
+    "escalations": 0,
+    "elapsed_sec": 1455.3980784416199
   }
 }
