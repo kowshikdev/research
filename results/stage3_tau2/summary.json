@@ -8,10 +8,10 @@
   },
   "retail/heuristic_agent": {
     "n_simulations": 114,
-    "avg_reward": 0.2719298245614035,
-    "pass_1": 0.2719298245614035,
-    "escalations": 15,
-    "elapsed_sec": 0.34949517250061035
+    "avg_reward": 0.22807017543859648,
+    "pass_1": 0.22807017543859648,
+    "escalations": 3,
+    "elapsed_sec": 1489.9155006408691
   },
   "retail/router_agent": {
     "n_simulations": 114,
