@@ -43,10 +43,10 @@
   },
   "airline/router_agent": {
     "n_simulations": 50,
-    "avg_reward": 0.52,
-    "pass_1": 0.52,
-    "escalations": 51,
-    "elapsed_sec": 0.29070234298706055
+    "avg_reward": 0.5,
+    "pass_1": 0.5,
+    "escalations": 22,
+    "elapsed_sec": 403.3147532939911
   },
   "airline/voi_agent": {
     "n_simulations": 50,
