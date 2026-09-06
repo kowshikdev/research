@@ -1,10 +1,10 @@
 {
   "retail/efe_agent": {
     "n_simulations": 114,
-    "avg_reward": 0.05263157894736842,
-    "pass_1": 0.05263157894736842,
-    "escalations": 114,
-    "elapsed_sec": 268.5513663291931
+    "avg_reward": 0.2807017543859649,
+    "pass_1": 0.2807017543859649,
+    "escalations": 10,
+    "elapsed_sec": 1215.7823264598846
   },
   "retail/heuristic_agent": {
     "n_simulations": 114,
