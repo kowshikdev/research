@@ -86,42 +86,57 @@ EFE-only re-run across all three domains (retail/airline/telecom, 278
 decisions total; other controllers zero this field by construction and
 weren't re-run).
 
-**The gate fired, and it's the uncomfortable direction:**
-`decisions_driven_by_epistemic` is **0/278** on the real sweep —
-identical in kind to the earlier 8-decision mock-agent pilot, now
-confirmed at full scale on genuinely varied real tasks across three
-domains. EFE chose `escalate_to_human` on **every single one** of the
-278 decisions (one decision per task, at the very first real turn —
-`mean_turns_per_task` and `escalation_rate` both 1.0). The epistemic
-term is not zero (mean epistemic value of the chosen policy: 0.436,
-epistemic share of the decision signal: 8.4%) — it's present and
-sometimes substantial — but never the deciding factor: the pragmatic
-term (mean -4.75 for the chosen policy — strongly negative, but still
-the least-bad option among policies whose pragmatic value is worse)
-would have picked `escalate_to_human` on its own every time, with or
-without the epistemic term attached.
+**The gate fired, and it's the uncomfortable direction — twice, at two
+different levels of the same investigation.**
+
+**First pass (278 decisions, one per task):** `decisions_driven_by_epistemic`
+was 0/278. EFE chose `escalate_to_human` on every single decision, at
+the very first real turn (`mean_turns_per_task` and `escalation_rate`
+both 1.0). That near-ceiling escalation rate turned out to have a
+concrete, mechanical explanation rather than being a deep property of
+active inference: `docs/known-issues-and-gotchas.md` #15 root-caused it
+to **two upstream defects feeding EFE corrupted evidence**, not a
+miscalibrated generative model — (1) `policy_gate` was stuck at the
+fail-safe `"needs_review"` because this environment had no `opa` CLI
+installed (the real policy says `"allow"` for this input), and (2) the
+cold-start skip only covered the literal first message, so EFE was
+deciding before it had ever attempted a tool call, on a
+low-confidence-by-construction "is this on track?" read of a conversation
+that had barely started. Fixing both and re-running EFE across all 3
+domains: escalations dropped 114→10 (retail) and 50→10 (airline), and
+retail's reward nearly tripled (0.053→0.281, EFE went from the worst
+controller to beating heuristic). Telecom responded more weakly
+(114→63, reward fell 0.175→0.096) — not yet explained, flagged as an
+open question in the known-issues doc rather than smoothed over.
+
+**Second pass, after both fixes (2163 decisions, real multi-turn
+behavior now visible):** this is the test of whether the interpretability
+finding was itself an artifact of the broken escalate-immediately
+pattern. It wasn't — if anything it's **more decisive now**:
+`decisions_driven_by_epistemic` is still 0, out of 2163 real decisions
+this time (95% of which are now `continue`, not `escalate_to_human`),
+and `epistemic_share` actually *fell* further (0.75% vs. 8.4% before).
+Even in the `"uncertain"` confidence band — belief < 0.5, exactly where
+information-seeking should matter most if it mattered anywhere — the
+epistemic term never wins the tie-break. Full numbers:
+`results/stage3_tau2/interpretability_report.md`.
 
 **What this means for the thesis, stated plainly rather than buried:**
-on this task class, with this hand-specified (uncalibrated)
-generative model, EFE is functionally a goal-seeking controller with
-extra machinery — the active-inference framing is not earning its keep
-here. This is compounded by (and likely partly explained by) the
-near-ceiling escalation rate itself: EFE escalates 100% of the time in
-all three domains (`results/stage3_tau2/summary.json`), badly hurting
-its reward relative to heuristic/router (e.g. retail: EFE 0.053 vs.
-heuristic 0.228) — a controller that always escalates has no live
-decision to be information-driven *about*. Two live hypotheses, not yet
-distinguished: (1) the hand-specified `OBS_DISTS`/`C_WEIGHTS` are
-mis-calibrated in a way that makes `needs_human` the dominant posterior
-almost immediately (Milestone 4 below would test this), or (2) this
-task class (tool-calling customer-service conversations) is
-structurally low-ambiguity in the same way the mock agent's scripted
-observations were — real conversations resolve the "what's actually
-wrong" question fast, leaving little room for the epistemic term to
-outweigh pragmatic considerations before a decision is due. Distinguishing
-these is exactly Milestone 4's job. Either way: "the epistemic term
-doesn't earn its keep in tool-agent orchestration, at least not without
-calibration" is a real, citable result — it just needs to lead the
+on this task class, with this hand-specified generative model, EFE is
+functionally a goal-seeking controller with extra machinery — the
+active-inference framing is not earning its keep here, and that
+conclusion survived a real methodological stress-test (fix the
+observation-corruption bugs, unlock real agentic behavior, re-measure)
+rather than resting on a single contaminated run. The near-ceiling
+escalation rate that originally compounded this is now *mostly*
+explained (observation corruption, not calibration) rather than an open
+mystery — which narrows Milestone 4's job. It's no longer "is EFE
+miscalibrated in some vague sense," it's specifically: does calibrating
+`OBS_DISTS`/`C_WEIGHTS` against the 2163 real (now trustworthy)
+decisions change whether the epistemic term ever drives a decision, and
+does it close telecom's remaining gap? "The epistemic term doesn't earn
+its keep in tool-agent orchestration, at least not without calibration"
+is a real, citable result either way — it just needs to lead the
 write-up, not be a footnote.
 
 ## Milestone 4 — Calibration (the biggest open scientific gap)

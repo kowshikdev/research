@@ -11,12 +11,27 @@ now extends that skip to "no tool call yet", not just "empty
 conversation" -- this test pins its three cases directly, since the
 full generate_next_message path needs a real LLM call to exercise.
 """
-from aif_orchestrator.tau2_integration.efe_agent import ControlNodeAgent
+from aif_orchestrator.tau2_integration.efe_agent import ControlNodeAgent, _next_synthetic_task_id
 from tau2.data_model.message import AssistantMessage, ToolCall, UserMessage
 
 
 def _agent():
     return ControlNodeAgent(tools=[], domain_policy="test policy", llm="dummy-model")
+
+
+def test_synthetic_task_ids_do_not_collide_across_simulated_process_restarts():
+    """Regression: the original counter-based implementation restarted
+    from 1 in every new process, and run_stage3_eval.py runs one domain
+    per process -- retail/airline/telecom each got ids 1..N, so
+    decision_log.group_by_task silently merged decisions from up to 3
+    unrelated real tasks under the same id (confirmed on the real Stage
+    3 EFE re-run: only 126 unique ids surfaced for 278 real tasks,
+    inflating mean_turns_per_task to ~17). A module-global counter can't
+    be reset from a test to simulate this cleanly, so this instead pins
+    the actual property that matters: ids drawn in a tight loop (the
+    closest a single process gets to "many restarts") never collide."""
+    ids = {_next_synthetic_task_id() for _ in range(1000)}
+    assert len(ids) == 1000
 
 
 def test_any_tool_call_attempted_false_on_empty_conversation():

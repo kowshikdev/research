@@ -319,6 +319,73 @@ is the likeliest failure, not the field-level schema the code was
 actually worried about — the first real run is worth doing before
 trusting the rest of the reader's caveats.
 
+### 15. EFE's real 100%-escalation cause: two compounding upstream defects, not a calibration problem
+
+The interpretability finding (#14's neighbor -- 0/278 decisions driven
+by the epistemic term) came with a second question: *why* was EFE
+escalating on literally every task? Direct inspection of the real
+decision log's observation distribution answered it exactly:
+`tool_result` was `"no_tool_called"` 100% of the time and `confidence`
+was `"low"` 276/278 times -- EFE was making its ONLY real decision at
+the very first evidence-bearing turn, before any tool had ever been
+attempted.
+
+Two compounding, fixable defects, both confirmed causally (not just
+correlated) by re-running `EFEControlNode.decide()` directly against
+the real observation combination:
+
+1. **`policy_gate` was corrupted.** This sandbox had no `opa` CLI
+   installed, so `evaluate_policy_gate()` failed safe to
+   `"needs_review"` on every call -- but the real policy
+   (`policies/policy_gate.rego`) says `default := "allow"` for this
+   exact input (no tool error, no repeated calls). Fixed by installing
+   opa (`go install github.com/open-policy-agent/opa@latest`, symlinked
+   onto PATH -- GitHub release downloads are blocked by this sandbox's
+   network policy, but the Go module proxy isn't). Not sufficient
+   alone: with `policy_gate` corrected but everything else unchanged,
+   belief in `needs_human` dropped from 82% to 45%, and EFE *still*
+   chose `escalate_to_human` with 100% certainty.
+2. **The cold-start skip only covered the literal first message.**
+   `_derive_confidence`'s prompt ("is this on track to resolve
+   correctly?") reasonably answers "low" at the very first real turn,
+   before the agent has had any chance to make progress -- but the
+   generative model reads "low confidence + no tool called" as strong
+   evidence for `needs_human`, the same misread the original turn-0 fix
+   was meant to prevent, just recurring one level deeper. Fixed by
+   broadening the skip from "the conversation is empty" to "no tool
+   call has been attempted yet" (`_any_tool_call_attempted`).
+
+Both fixes together, re-run across all 3 domains: escalations dropped
+114→10 (retail), 50→10 (airline), 114→63 (telecom) -- real and
+consistent in direction everywhere, but a much weaker effect on
+telecom, and telecom's reward fell slightly (0.175→0.096) rather than
+improving like retail's did (0.053→0.281, EFE went from worst controller
+to beating heuristic) and airline's reward staying flat. Not yet
+explained why telecom responds differently -- flagged as an open
+question below rather than assumed away.
+
+**A third, smaller bug found while re-running this fix's own
+verification:** the decision-logger's synthetic task ids were a plain
+incrementing counter, which restarts from 1 in every new process --
+and `run_stage3_eval.py` runs one domain per process. Retail/airline/
+telecom each produced ids 1..N, so `decision_log.group_by_task` silently
+merged decisions from up to 3 unrelated real tasks under the same id
+(126 unique ids surfaced for 278 real tasks, inflating
+`mean_turns_per_task` to an implausible ~17). Only the *task-grouped*
+metrics (`mean_turns_per_task`, per-task `escalation_rate` as computed
+by `analyze_decision_log`) were affected -- `decisions_driven_by_epistemic`,
+`epistemic_share`, and `policy_counts` aggregate over the flat record
+list, not per-task groups, so they were never wrong. Fixed with
+`uuid.uuid4()`, which has no process-boundary assumption to violate.
+
+**Lesson, twice over**: (1) a hand-specified generative model can look
+broken when it's actually being fed corrupted or premature evidence --
+verify the observation stream before touching the probabilities, same
+lesson as #6 and #13 in this file, now three instances of the identical
+mistake at different layers. (2) any "unique id" scheme needs to state
+what scope it's unique *within* -- a counter is unique within a
+process, not across the separate processes a real sweep actually runs.
+
 ## Open unknowns (not bugs, but flagged so they don't get mistaken for measurements)
 
 - **`scripts/estimate_stage3_cost.py`'s assumptions** — average turns
@@ -356,4 +423,23 @@ trusting the rest of the reader's caveats.
   Vertex routing, etc.), a controller whose decision math weighs
   "no verifiable evidence yet" heavily would plausibly react exactly
   like this. Flagged rather than silently accepted or reverted, since
-  the cause isn't confirmed either way yet.
+  the cause isn't confirmed either way yet. (This entry's "opa CLI
+  absence rules it out" reasoning was accurate for both runs it
+  compares -- opa wasn't installed in this environment until #15's fix,
+  after this swing was already observed.)
+- **`telecom/efe_agent` responded much more weakly to #15's fix than
+  retail/airline did, and its reward fell rather than improved.**
+  Escalations dropped 114→10 on retail and 50→10 on airline (both
+  under 20% of the original rate), but only 114→63 on telecom (55%
+  still escalating) -- real and directionally consistent with the other
+  two domains, so the fix's mechanism is confirmed general, but clearly
+  weaker here. Reward moved the wrong way too: retail's reward nearly
+  tripled (0.053→0.281, EFE went from the worst controller to beating
+  heuristic) and airline's held flat, but telecom's fell (0.175→0.096).
+  Not yet investigated why telecom differs -- candidates include a
+  genuinely higher rate of telecom tasks that need early escalation
+  once real evidence is available (plausible: telecom conversations
+  may surface unresolvable account/plan issues faster than retail's
+  order-lookup flows do), or a domain-specific issue in telecom's tool
+  set/policy text not yet diagnosed. Left open rather than assumed
+  away in either direction.

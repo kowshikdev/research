@@ -34,7 +34,6 @@ compatibility with the Stage 3 smoke test.
 """
 import json
 import os
-import threading
 import uuid
 from typing import Generic, Optional, TypeVar
 
@@ -212,15 +211,18 @@ class ControlNodeAgentState(BaseModel):
 
 ControlNodeAgentStateType = TypeVar("ControlNodeAgentStateType", bound="ControlNodeAgentState")
 
-_task_counter_lock = threading.Lock()
-_task_counter = 0
-
-
 def _next_synthetic_task_id() -> str:
-    global _task_counter
-    with _task_counter_lock:
-        _task_counter += 1
-        return f"synthetic-{_task_counter}"
+    """A plain incrementing counter collides across separate process
+    invocations (confirmed: run_stage3_eval.py runs one domain per
+    process, so retail/airline/telecom each restarted the counter from
+    1 -- decision_log.group_by_task then silently merged decisions from
+    up to 3 unrelated real tasks under the same synthetic id, corrupting
+    mean_turns_per_task and per-task escalation_rate -- 126 unique ids
+    surfaced for 278 real tasks the first time this ran across all 3
+    domains as separate processes). uuid4 has no process-boundary
+    assumption to violate.
+    """
+    return f"synthetic-{uuid.uuid4().hex[:12]}"
 
 
 def _log_decision_if_enabled(controller_name: str, task_id: str, turn: int, record: dict) -> None:
