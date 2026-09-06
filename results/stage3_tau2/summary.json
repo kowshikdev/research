@@ -71,10 +71,10 @@
   },
   "telecom/efe_agent": {
     "n_simulations": 114,
-    "avg_reward": 0.17543859649122806,
-    "pass_1": 0.17543859649122806,
-    "escalations": 114,
-    "elapsed_sec": 153.66802167892456
+    "avg_reward": 0.09649122807017543,
+    "pass_1": 0.09649122807017543,
+    "escalations": 63,
+    "elapsed_sec": 823.7452907562256
   },
   "telecom/heuristic_agent": {
     "n_simulations": 110,
