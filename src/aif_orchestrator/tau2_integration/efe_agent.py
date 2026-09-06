@@ -317,6 +317,9 @@ class ControlNodeAgent(
             policy_gate=policy_gate, retrieval_quality=retrieval_quality,
         )
 
+    def _any_tool_call_attempted(self, state: ControlNodeAgentStateType) -> bool:
+        return any(isinstance(m, AssistantMessage) and m.is_tool_call() for m in state.messages)
+
     def _count_repeated_last_call(self, state: ControlNodeAgentStateType) -> int:
         last_call = None
         for m in reversed(state.messages):
@@ -364,18 +367,30 @@ class ControlNodeAgent(
     def generate_next_message(
         self, message: ValidAgentInputMessage, state: ControlNodeAgentStateType
     ) -> tuple[AssistantMessage, ControlNodeAgentStateType]:
-        # Turn 0 (the opening customer message, before the agent has done
-        # anything): there's no real signal to reason about yet, and
+        # Before any tool has ever been called in this conversation:
+        # there's no real signal to reason about yet, and
         # _derive_observation would return tool_result="no_tool_called"
-        # -- which the model treats as evidence FOR needs_human (0.50
-        # probability in TOOL_RESULT_DIST), not "nothing has happened
-        # yet". That misread the very first turn as already-stuck and
-        # escalated immediately (verified: a real run against tau2's
-        # mock domain did exactly this). mock_agent_step avoids the same
-        # trap with its own turn==0 special case; here the fix is to
-        # skip the control loop on a genuinely empty conversation and
-        # just let the agent take its first natural action.
-        if not state.messages and isinstance(message, UserMessage):
+        # -- which the model treats as meaningful evidence FOR
+        # needs_human (0.50 probability in TOOL_RESULT_DIST), not
+        # "nothing has happened yet". Originally this only skipped the
+        # literal first turn (mock_agent_step's turn==0 special case,
+        # mirrored here) -- but the real Stage 3 sweep showed the SAME
+        # misread recurring one level deeper: across all 278 EFE
+        # decisions in the full retail/airline/telecom sweep,
+        # tool_result was "no_tool_called" 100% of the time and
+        # confidence was "low" 276/278 -- i.e. EFE was making its ONLY
+        # real decision at the second turn (right after the customer's
+        # first reply, still before any tool attempt), not the tenth.
+        # _derive_confidence's own prompt ("is this on track to resolve
+        # correctly?") reasonably answers "low" this early regardless of
+        # how the task will actually go, and the generative model then
+        # reads that low-confidence-with-no-evidence combination as
+        # ~82% belief in needs_human -- see docs/known-issues-and-
+        # gotchas.md's real-decision-log analysis. Broadened from "the
+        # conversation is empty" to "no tool call has been attempted
+        # yet" so the control loop only starts reasoning once there's
+        # actually something to reason about.
+        if isinstance(message, UserMessage) and not self._any_tool_call_attempted(state):
             state.messages.append(message)
             assistant_message = generate(
                 model=self.llm, tools=self._tools_sans_transfer, messages=state.system_messages + state.messages,
