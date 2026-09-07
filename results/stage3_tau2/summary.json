@@ -63,11 +63,11 @@
     "elapsed_sec": 1244.1600062847137
   },
   "airline/react_agent": {
-    "n_simulations": 49,
-    "avg_reward": 0.40816326530612246,
-    "pass_1": 0.40816326530612246,
+    "n_simulations": 45,
+    "avg_reward": 0.4,
+    "pass_1": 0.4,
     "escalations": 0,
-    "elapsed_sec": 720.6520037651062
+    "elapsed_sec": 835.7910170555115
   },
   "telecom/efe_agent": {
     "n_simulations": 114,
