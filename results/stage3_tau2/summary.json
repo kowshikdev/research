@@ -15,10 +15,10 @@
   },
   "retail/router_agent": {
     "n_simulations": 114,
-    "avg_reward": 0.14912280701754385,
-    "pass_1": 0.14912280701754385,
-    "escalations": 57,
-    "elapsed_sec": 1118.6160547733307
+    "avg_reward": 0.2894736842105263,
+    "pass_1": 0.2894736842105263,
+    "escalations": 0,
+    "elapsed_sec": 1244.0606458187103
   },
   "retail/voi_agent": {
     "n_simulations": 114,
