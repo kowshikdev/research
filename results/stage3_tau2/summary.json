@@ -21,11 +21,11 @@
     "elapsed_sec": 1244.0606458187103
   },
   "retail/voi_agent": {
-    "n_simulations": 114,
-    "avg_reward": 0.06140350877192982,
-    "pass_1": 0.06140350877192982,
-    "escalations": 113,
-    "elapsed_sec": 258.21812415122986
+    "n_simulations": 113,
+    "avg_reward": 0.24778761061946902,
+    "pass_1": 0.24778761061946902,
+    "escalations": 2,
+    "elapsed_sec": 1282.463610649109
   },
   "airline/efe_agent": {
     "n_simulations": 50,
