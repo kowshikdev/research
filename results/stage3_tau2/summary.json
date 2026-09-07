@@ -98,10 +98,10 @@
     "elapsed_sec": 899.2681174278259
   },
   "telecom/react_agent": {
-    "n_simulations": 113,
-    "avg_reward": 0.017699115044247787,
-    "pass_1": 0.017699115044247787,
+    "n_simulations": 114,
+    "avg_reward": 0.02631578947368421,
+    "pass_1": 0.02631578947368421,
     "escalations": 0,
-    "elapsed_sec": 1455.3980784416199
+    "elapsed_sec": 1247.3952555656433
   }
 }
