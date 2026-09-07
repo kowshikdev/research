@@ -7,11 +7,11 @@
     "elapsed_sec": 1215.7823264598846
   },
   "retail/heuristic_agent": {
-    "n_simulations": 114,
-    "avg_reward": 0.22807017543859648,
-    "pass_1": 0.22807017543859648,
-    "escalations": 3,
-    "elapsed_sec": 1489.9155006408691
+    "n_simulations": 105,
+    "avg_reward": 0.3047619047619048,
+    "pass_1": 0.3047619047619048,
+    "escalations": 2,
+    "elapsed_sec": 1413.2313566207886
   },
   "retail/router_agent": {
     "n_simulations": 114,
