@@ -84,11 +84,11 @@
     "elapsed_sec": 1112.2072265148163
   },
   "telecom/router_agent": {
-    "n_simulations": 114,
-    "avg_reward": 0.017543859649122806,
-    "pass_1": 0.017543859649122806,
-    "escalations": 10,
-    "elapsed_sec": 1235.7372560501099
+    "n_simulations": 108,
+    "avg_reward": 0.009259259259259259,
+    "pass_1": 0.009259259259259259,
+    "escalations": 0,
+    "elapsed_sec": 1161.354077577591
   },
   "telecom/voi_agent": {
     "n_simulations": 114,
