@@ -8,9 +8,24 @@ short-horizon checklist; this file is the medium-horizon plan that sits
 between them — what happens after the current TODO list is empty, and
 what would make it not happen.
 
-**Current position:** Stages 0 → 2 complete and reproducible; Stage 3
-fully wired but never executed. The next action is a spending decision,
-not a coding one.
+**Current position:** Stages 0 → 3 complete, including a genuinely fair
+5-controller × 3-domain comparison (`results/stage3_tau2/summary.json`,
+`report.md`) — all 15 combinations re-run under the same, fully-fixed
+observation pipeline (Milestone 3's `opa`/cold-start fixes applied to
+every controller, not just EFE). Headline: EFE is **not** the outright
+winner anywhere once the comparison is fair — mid-pack on retail and
+airline (all five controllers cluster within ~0.06–0.08 reward of each
+other on both), 2nd on telecom (though telecom rewards are low across
+the board, a domain-wide effect, not an EFE-specific one). EFE remains
+the most escalation-prone controller in all three domains even after
+the fix (8.8% / 20% / 55%, vs. near-zero for most baselines), which
+connects to Milestone 3's interpretability finding — that
+escalation-proneness is a property of EFE's pragmatic-value weighting,
+not epistemic drive. Telecom's uniformly weak response to the fix
+(across EFE, heuristic, and VOI) is a live, unexplained finding —
+Milestone 4's next candidate to investigate. Stage 5 interpretability
+is done (gate fired twice, see Milestone 3). Remaining open work is
+calibration (Milestone 4) and the write-up (Milestone 5+).
 
 ## Timeline
 
