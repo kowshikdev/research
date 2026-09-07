@@ -77,11 +77,11 @@
     "elapsed_sec": 823.7452907562256
   },
   "telecom/heuristic_agent": {
-    "n_simulations": 110,
-    "avg_reward": 0.10909090909090909,
-    "pass_1": 0.10909090909090909,
-    "escalations": 41,
-    "elapsed_sec": 1208.5029497146606
+    "n_simulations": 104,
+    "avg_reward": 0.11538461538461539,
+    "pass_1": 0.11538461538461539,
+    "escalations": 55,
+    "elapsed_sec": 1112.2072265148163
   },
   "telecom/router_agent": {
     "n_simulations": 114,
