@@ -57,10 +57,10 @@
   },
   "retail/react_agent": {
     "n_simulations": 114,
-    "avg_reward": 0.23684210526315788,
-    "pass_1": 0.23684210526315788,
+    "avg_reward": 0.30701754385964913,
+    "pass_1": 0.30701754385964913,
     "escalations": 0,
-    "elapsed_sec": 1361.0017766952515
+    "elapsed_sec": 1244.1600062847137
   },
   "airline/react_agent": {
     "n_simulations": 49,
